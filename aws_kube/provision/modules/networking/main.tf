@@ -42,6 +42,35 @@ resource "aws_subnet" "private_b" {
   }
 }
 
+
+resource "aws_subnet" "public_a" {
+  vpc_id = aws_vpc.main.id
+
+  cidr_block              = "10.20.32.0/20"
+  availability_zone       = "eu-north-1a"
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name                                        = "eks-public-a"
+    "kubernetes.io/role/elb"                    = "1"
+    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+  }
+}
+
+resource "aws_subnet" "public_b" {
+  vpc_id = aws_vpc.main.id
+
+  cidr_block              = "10.20.48.0/20"
+  availability_zone       = "eu-north-1b"
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name                                        = "eks-public-b"
+    "kubernetes.io/role/elb"                    = "1"
+    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+  }
+}
+
 resource "aws_nat_gateway" "regional" {
   vpc_id            = aws_vpc.main.id
   availability_mode = "regional"
@@ -68,6 +97,20 @@ resource "aws_route_table" "private" {
   }
 }
 
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+
+  tags = {
+    Name = "eks-public-routes"
+  }
+}
+
+
 resource "aws_route_table_association" "private_a" {
   subnet_id      = aws_subnet.private_a.id
   route_table_id = aws_route_table.private.id
@@ -76,4 +119,14 @@ resource "aws_route_table_association" "private_a" {
 resource "aws_route_table_association" "private_b" {
   subnet_id      = aws_subnet.private_b.id
   route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table_association" "public_a" {
+  subnet_id      = aws_subnet.public_a.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "public_b" {
+  subnet_id      = aws_subnet.public_b.id
+  route_table_id = aws_route_table.public.id
 }

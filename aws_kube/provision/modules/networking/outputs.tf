@@ -10,3 +10,10 @@ output "private_subnet_ids" {
     aws_subnet.private_b.id,
   ]
 }
+output "public_subnet_ids" {
+  description = "Public subnet IDs used by internet-facing load balancers."
+  value = [
+    aws_subnet.public_a.id,
+    aws_subnet.public_b.id,
+  ]
+}

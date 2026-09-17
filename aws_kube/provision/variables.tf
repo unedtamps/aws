@@ -29,3 +29,19 @@ variable "cluster_endpoint_public_access_cidrs" {
     error_message = "Provide at least one valid CIDR, preferably your public IP as a /32."
   }
 }
+
+variable "acm_domain_name" {
+  type        = string
+  description = "Domain name for the NLB TLS certificate."
+}
+
+variable "cloudflare_zone_id" {
+  type        = string
+  description = "Cloudflare zone ID for lensboxd.site."
+}
+
+variable "nlb_ssl_policy" {
+  type        = string
+  description = "TLS security policy for the NLB listener."
+  default     = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+}
