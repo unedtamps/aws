@@ -4,7 +4,8 @@ module "networking" {
 }
 
 module "iam" {
-  source = "./modules/iam"
+  source       = "./modules/iam"
+  cluster_name = var.cluster_name
 }
 
 module "eks" {
@@ -17,6 +18,7 @@ module "eks" {
   cluster_role_arn                     = module.iam.cluster_role_arn
   node_role_arn                        = module.iam.node_role_arn
   vpc_cni_role_arn                     = module.iam.vpc_cni_role_arn
+  load_balancer_controller_role_arn    = module.iam.load_balancer_controller_role_arn
 
   # EKS resources must wait for the IAM roles and policy attachments.
   depends_on = [module.iam]
