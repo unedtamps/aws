@@ -1,0 +1,11 @@
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: traefik
+  namespace: traefik
+spec:
+  serviceRef:
+    name: traefik
+    port: 80
+  targetType: ip
+  targetGroupARN: arn:aws:elasticloadbalancing:eu-north-1:246830848520:targetgroup/lab-eks-traefik-http/464c782da286bddf

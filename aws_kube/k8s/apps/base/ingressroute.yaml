@@ -1,0 +1,14 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: route-ingress
+  namespace: dev
+spec:
+  entryPoints:
+    - api
+  routes:
+    - match: Host(`traefik.lensboxd.site`)
+      kind: Rule
+      services:
+        - name: api-service
+          port: 80
