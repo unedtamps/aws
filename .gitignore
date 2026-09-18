@@ -5,3 +5,5 @@ crash.log
 crash.*.log
 *.tfplan
 generated.tf
+*.tfvars
+!*.tfvars.example
