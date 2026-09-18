@@ -70,7 +70,7 @@ jobs:
       - name: Create dev image update pull request
         uses: peter-evans/create-pull-request@v8
         with:
-          token: ${{ secrets.TOKEN_GITHUB }}
+          token: ${{github.token}}
           base: master
           branch: automation/dev-api-image
           delete-branch: true
