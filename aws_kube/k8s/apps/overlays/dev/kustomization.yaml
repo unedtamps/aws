@@ -5,6 +5,9 @@ resources:
   - ../../base
 
 namespace: dev
+images:
+  - name: unedotamps/api-app
+    newTag: latest
 
 replicas:
   - name: api-app

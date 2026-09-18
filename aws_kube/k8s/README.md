@@ -75,6 +75,7 @@ k8s/
 |   |-- aws-load-balancer-controller/
 |   |   `-- install.sh
 |   `-- traefik/
+|       |-- install-crds.sh
 |       |-- base/
 |       `-- overlays/lab/
 |-- apps/
@@ -133,6 +134,13 @@ OpenTofu dan seluruh perintah operasional secara bersamaan.
 ## Traefik
 
 Base Traefik berisi ServiceAccount, RBAC, Deployment, dan ClusterIP Service.
+CRD Traefik dipasang terpisah menggunakan `platform/traefik/install-crds.sh`.
+Script memasang chart khusus `traefik-crds` versi `1.18.0` sebagai release
+`traefik-crds` pada namespace `traefik`.
+
+Release tersebut hanya mengelola CRD Traefik. Gateway API, Knative, dan Traefik
+Hub CRD dinonaktifkan. Deployment, Service, ServiceAccount, dan RBAC Traefik
+tetap dikelola oleh Kustomize.
 
 | Komponen | Konfigurasi |
 |---|---|
@@ -190,16 +198,33 @@ push image dengan tag immutable, lalu perbarui manifest atau overlay Kustomize.
 - AWS CLI profile memiliki akses untuk membaca EKS dan Target Group.
 - Traefik CRD, termasuk `IngressRoute`, tersedia pada cluster.
 
-Repository ini belum menyimpan manifest Traefik CRD secara lokal. Install CRD
-resmi yang dipin ke versi `v3.3` sebelum menerapkan aplikasi. RBAC Traefik sudah
-tersedia pada `platform/traefik/base/rbac.yaml`.
+Repository ini tidak menyimpan manifest Traefik CRD secara lokal. Install CRD
+dari Helm chart yang versinya sudah dipin sebelum menerapkan aplikasi. RBAC
+Traefik tersedia pada `platform/traefik/base/rbac.yaml`.
 
 ```bash
-kubectl apply -f \
-  https://raw.githubusercontent.com/traefik/traefik/v3.3/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
+./aws_kube/k8s/platform/traefik/install-crds.sh
 
 kubectl get crd ingressroutes.traefik.io
 ```
+
+Versi chart dapat dioverride bila CRD perlu diperbarui:
+
+```bash
+TRAEFIK_CHART_VERSION=1.18.0 \
+  ./aws_kube/k8s/platform/traefik/install-crds.sh
+```
+
+Jika CRD sudah dibuat oleh release Helm lain, lakukan adopsi secara eksplisit
+setelah memeriksa versi CRD yang aktif:
+
+```bash
+TAKE_OWNERSHIP=true \
+  ./aws_kube/k8s/platform/traefik/install-crds.sh
+```
+
+Tanpa `TAKE_OWNERSHIP=true`, script tidak mengambil alih ownership resource yang
+sudah dimiliki release lain.
 
 AWS Load Balancer Controller Helm chart menyediakan CRD
 `targetgroupbindings.elbv2.k8s.aws` yang dibutuhkan overlay Traefik.
@@ -228,8 +253,7 @@ kubectl apply -f aws_kube/k8s/namespace/
 ### 3. Install Traefik CRD
 
 ```bash
-kubectl apply -f \
-  https://raw.githubusercontent.com/traefik/traefik/v3.3/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
+./aws_kube/k8s/platform/traefik/install-crds.sh
 
 kubectl get crd ingressroutes.traefik.io
 ```
@@ -346,16 +370,19 @@ Hapus aplikasi sebelum platform:
 ```bash
 kubectl delete -k aws_kube/k8s/apps/overlays/dev
 kubectl delete -k aws_kube/k8s/platform/traefik/overlays/lab
+helm uninstall traefik-crds --namespace traefik
 helm uninstall aws-load-balancer-controller --namespace kube-system
 kubectl delete -f aws_kube/k8s/namespace/
 ```
 
-Pastikan target Pod sudah tidak terdaftar sebelum menghancurkan NLB atau EKS.
+Chart memakai `deleteOnUninstall=false`, sehingga uninstall release tidak
+menghapus CRD dan custom resource secara tidak sengaja. Pastikan target Pod sudah
+tidak terdaftar sebelum menghancurkan NLB atau EKS.
 
 ## Batasan Saat Ini
 
-- Traefik CRD belum disimpan secara lokal dan masih diambil dari URL resmi saat
-  deployment.
+- Traefik CRD tidak disimpan secara lokal dan release `traefik-crds` memerlukan
+  akses ke Helm repository saat instalasi atau upgrade.
 - ARN Target Group pada `TargetGroupBinding` masih hard-coded.
 - VPC ID pada installer AWS Load Balancer Controller masih hard-coded.
 - Helm chart controller belum dipin ke versi tertentu.
