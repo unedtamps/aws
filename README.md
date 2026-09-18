@@ -40,7 +40,7 @@ flowchart LR
 .
 |-- aws_kube/
 |   |-- apps/
-|   |   `-- go-healthcheck/       # Source code aplikasi contoh
+|   |   `-- api/                  # Source code aplikasi contoh
 |   |-- k8s/                      # Manifest dan deployment Kubernetes
 |   `-- provision/                # Infrastruktur EKS dengan OpenTofu
 |-- ec2_lab/                      # Lab EC2 dan Application Load Balancer
@@ -55,7 +55,7 @@ Traefik, dan aplikasi contoh di dalam cluster.
 
 - [Dokumentasi provisioning AWS](aws_kube/provision/README.md)
 - [Dokumentasi platform Kubernetes](aws_kube/k8s/README.md)
-- Source aplikasi: [`aws_kube/apps/go-healthcheck`](aws_kube/apps/go-healthcheck)
+- Source aplikasi: [`aws_kube/apps/api`](aws_kube/apps/api)
 
 ### `ec2_lab`
 

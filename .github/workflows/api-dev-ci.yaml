@@ -1,0 +1,87 @@
+name: API CI and dev image update
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - aws_kube/apps/api/**
+      - .github/workflows/api-dev-ci.yaml
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: api-dev-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_DIR: aws_kube/apps/api
+  IMAGE_NAME: unedotamps/api-app
+  IMAGE_TAG: sha-${{ github.sha }}
+  DEV_KUSTOMIZATION: aws_kube/k8s/apps/overlays/dev/kustomization.yaml
+
+jobs:
+  build-push-and-update:
+    name: Test, publish, and update dev
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ env.APP_DIR }}/go.mod
+          cache-dependency-path: ${{ env.APP_DIR }}/go.mod
+
+      - name: Test application
+        working-directory: ${{ env.APP_DIR }}
+        run: go test ./...
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.APP_DIR }}
+          file: ${{ env.APP_DIR }}/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Update dev image tag
+        shell: bash
+        run: |
+          sed -i "/name: ${IMAGE_NAME//\//\\/}/{n;s/newTag:.*/newTag: ${IMAGE_TAG}/;}" "${DEV_KUSTOMIZATION}"
+          grep -Fq "newTag: ${IMAGE_TAG}" "${DEV_KUSTOMIZATION}"
+
+      - name: Create dev image update pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.TOKEN_GITHUB }}
+          base: master
+          branch: automation/dev-api-image
+          delete-branch: true
+          add-paths: ${{ env.DEV_KUSTOMIZATION }}
+          commit-message: "ci(dev): deploy api ${{ env.IMAGE_TAG }}"
+          title: "ci(dev): deploy api ${{ env.IMAGE_TAG }}"
+          body: |
+            Automated development image update.
+
+            - Source commit: `${{ github.sha }}`
+            - Image: `${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}`
+            - Digest: `${{ steps.build.outputs.digest }}`
+
+            Merge this pull request to let Argo CD deploy the image to `dev`.

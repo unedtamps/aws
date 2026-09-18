@@ -183,7 +183,7 @@ Base aplikasi mendefinisikan Deployment, ClusterIP Service, dan Traefik
 | Route | ``Host(`traefik.lensboxd.site`)`` |
 | EntryPoint | `api` |
 
-Source image contoh berada di [`../apps/go-healthcheck`](../apps/go-healthcheck).
+Source image contoh berada di [`../apps/api`](../apps/api).
 Aplikasi menyediakan endpoint `/`, `/healthz`, dan `/readyz` serta memakai nama
 Pod sebagai nilai `APP_NAME`.
 
