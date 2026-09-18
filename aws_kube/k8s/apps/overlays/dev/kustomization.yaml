@@ -7,7 +7,7 @@ resources:
 namespace: dev
 images:
   - name: unedotamps/api-app
-    newTag: sha-7ee8599646a11c7736f9479ea7a8682dc20100aa
+    newTag: sha-39c90d17836b46c3c872f2c6ae02708fb8743ed0
 
 replicas:
   - name: api-app
