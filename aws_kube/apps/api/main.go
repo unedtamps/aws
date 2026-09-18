@@ -59,6 +59,7 @@ func newHandler() http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", rootHandler(service, environment))
+	mux.HandleFunc("/hello", helloHandler(service))
 	mux.HandleFunc("/healthz", healthHandler)
 	mux.HandleFunc("/readyz", healthHandler)
 
@@ -77,6 +78,21 @@ func rootHandler(service, environment string) http.HandlerFunc {
 			Message:     "hello from go-healthcheck",
 			Service:     service,
 			Status:      "ok",
+		})
+	}
+}
+
+func helloHandler(service string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, response{
+			Message: "hello world from " + service,
+			Service: service,
+			Status:  "ok",
 		})
 	}
 }

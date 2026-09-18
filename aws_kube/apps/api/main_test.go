@@ -53,6 +53,32 @@ func TestRootEndpoint(t *testing.T) {
 	}
 }
 
+func TestHelloEndpointUsesAppName(t *testing.T) {
+	t.Setenv("APP_NAME", "api-dev")
+
+	request := httptest.NewRequest(http.MethodGet, "/hello", nil)
+	recorder := httptest.NewRecorder()
+
+	newHandler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var got response
+	if err := json.NewDecoder(recorder.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if got.Message != "hello world from api-dev" {
+		t.Fatalf("message = %q, want %q", got.Message, "hello world from api-dev")
+	}
+
+	if got.Service != "api-dev" {
+		t.Fatalf("service = %q, want %q", got.Service, "api-dev")
+	}
+}
+
 func TestMethodNotAllowed(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/healthz", nil)
 	recorder := httptest.NewRecorder()
