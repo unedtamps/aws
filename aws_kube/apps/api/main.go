@@ -17,6 +17,7 @@ type response struct {
 	Message     string `json:"message,omitempty"`
 	Service     string `json:"service,omitempty"`
 	Status      string `json:"status"`
+	Username    string `json:"username,omitempty"`
 }
 
 func main() {
@@ -56,9 +57,10 @@ func main() {
 func newHandler() http.Handler {
 	service := envOrDefault("APP_NAME", "go-healthcheck")
 	environment := envOrDefault("APP_ENV", "local")
+	username := envOrDefault("USERNAME", "")
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", rootHandler(service, environment))
+	mux.HandleFunc("/", rootHandler(service, environment, username))
 	mux.HandleFunc("/hello", helloHandler(service))
 	mux.HandleFunc("/healthz", healthHandler)
 	mux.HandleFunc("/readyz", healthHandler)
@@ -66,7 +68,7 @@ func newHandler() http.Handler {
 	return mux
 }
 
-func rootHandler(service, environment string) http.HandlerFunc {
+func rootHandler(service, environment, username string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			methodNotAllowed(w)
@@ -78,6 +80,7 @@ func rootHandler(service, environment string) http.HandlerFunc {
 			Message:     "hello from go-healthcheck",
 			Service:     service,
 			Status:      "ok",
+			Username:    username,
 		})
 	}
 }

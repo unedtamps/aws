@@ -53,6 +53,24 @@ func TestRootEndpoint(t *testing.T) {
 	}
 }
 
+func TestRootEndpointShowsUsername(t *testing.T) {
+	t.Setenv("USERNAME", "test-user")
+
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	recorder := httptest.NewRecorder()
+
+	newHandler().ServeHTTP(recorder, request)
+
+	var got response
+	if err := json.NewDecoder(recorder.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if got.Username != "test-user" {
+		t.Fatalf("username = %q, want %q", got.Username, "test-user")
+	}
+}
+
 func TestHelloEndpointUsesAppName(t *testing.T) {
 	t.Setenv("APP_NAME", "api-dev")
 

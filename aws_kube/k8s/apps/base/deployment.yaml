@@ -25,6 +25,11 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            - name: USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: api-app-credentials
+                  key: username
           livenessProbe:
             httpGet:
               path: /healthz
