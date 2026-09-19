@@ -2,7 +2,8 @@
 
 Folder ini berisi manifest Kubernetes untuk platform dan aplikasi yang berjalan
 di cluster EKS `lab-eks`. Kustomize digunakan untuk menyusun base dan overlay,
-sedangkan Helm digunakan untuk memasang AWS Load Balancer Controller.
+sedangkan Helm digunakan untuk memasang controller platform seperti AWS Load
+Balancer Controller dan Argo CD.
 
 Infrastruktur AWS yang menjadi dependensi folder ini dijelaskan pada
 [`../provision/README.md`](../provision/README.md).
@@ -72,6 +73,10 @@ k8s/
 |   |-- prod.yaml
 |   `-- traefik.yaml
 |-- platform/
+|   |-- argocd/
+|   |   |-- applications/
+|   |   |   `-- api-dev.yaml
+|   |   `-- install.sh
 |   |-- aws-load-balancer-controller/
 |   |   `-- install.sh
 |   `-- traefik/
@@ -88,6 +93,7 @@ k8s/
 
 | Namespace | Fungsi | Status penggunaan |
 |---|---|---|
+| `argocd` | Argo CD control plane dan resource `Application` | Aktif |
 | `kube-system` | AWS Load Balancer Controller dan add-on cluster | Aktif |
 | `traefik` | Traefik dan `TargetGroupBinding` | Aktif |
 | `dev` | Workload aplikasi development | Aktif |
@@ -130,6 +136,182 @@ Pod Identity association terikat pada namespace `kube-system` dan ServiceAccount
 `aws-load-balancer-controller`; perintah rollout dan uninstall pada dokumen ini
 juga menggunakan nilai tersebut. Jika keduanya diubah, perbarui association
 OpenTofu dan seluruh perintah operasional secara bersamaan.
+
+## Argo CD
+
+Argo CD menjalankan continuous delivery dengan model pull-based. CI membangun
+image dan membuat Pull Request perubahan tag image. Setelah Pull Request
+di-merge, Argo CD membaca state terbaru dari Git, membandingkannya dengan state
+cluster, lalu melakukan sinkronisasi otomatis.
+
+```mermaid
+flowchart LR
+    developer["Developer"] --> master["GitHub master"]
+    master --> ci["GitHub Actions"]
+    ci --> registry["Docker Hub<br/>sha-&lt;commit&gt;"]
+    ci --> pr["Image update PR"]
+    pr -->|"Human merge"| gitops["Kustomize overlay dev"]
+    gitops -->|"Poll sekitar 3 menit"| argocd["Argo CD"]
+    argocd -->|"Automated sync"| dev["namespace dev"]
+    registry --> dev
+```
+
+Argo CD tidak membangun image dan CI tidak menjalankan `kubectl apply`. Git
+menjadi desired state, sedangkan Argo CD menjadi controller yang menerapkan
+desired state tersebut ke EKS.
+
+### Instalasi Argo CD
+
+Installer berada di:
+
+```text
+platform/argocd/install.sh
+```
+
+Jalankan dari root repository:
+
+```bash
+./aws_kube/k8s/platform/argocd/install.sh
+```
+
+Helm chart memasang controller Argo CD sekaligus CRD cluster-scoped seperti
+`applications.argoproj.io`. Kondisi release lab saat dokumentasi ini ditulis:
+
+| Item | Nilai |
+|---|---|
+| Helm release | `argocd` |
+| Namespace | `argocd` |
+| Chart | `argo-cd-10.9.2` |
+| Argo CD | `v3.5.3` |
+
+Verifikasi instalasi:
+
+```bash
+helm list --namespace argocd
+kubectl get pods --namespace argocd
+kubectl get crd applications.argoproj.io
+```
+
+Script saat ini belum memin versi chart. Periksa hasil `helm upgrade` sebelum
+upgrade berikutnya karena versi terbaru repository Helm dapat berubah.
+
+### Application `api-dev`
+
+Manifest GitOps aplikasi development berada di:
+
+```text
+platform/argocd/applications/api-dev.yaml
+```
+
+Konfigurasi utamanya:
+
+| Field | Nilai | Fungsi |
+|---|---|---|
+| `metadata.namespace` | `argocd` | Lokasi resource `Application` |
+| `spec.source.repoURL` | `https://github.com/unedtamps/aws.git` | Repository desired state |
+| `spec.source.targetRevision` | `HEAD` | Default branch repository |
+| `spec.source.path` | `aws_kube/k8s/apps/overlays/dev` | Overlay Kustomize yang dirender |
+| `spec.destination.server` | `https://kubernetes.default.svc` | Cluster yang sama dengan Argo CD |
+| `spec.destination.namespace` | `dev` | Namespace target workload |
+
+Apply resource setelah Argo CD dan Traefik CRD siap:
+
+```bash
+kubectl apply -f \
+  aws_kube/k8s/platform/argocd/applications/api-dev.yaml
+```
+
+Argo CD mendeteksi `kustomization.yaml` pada source path dan merender overlay
+secara otomatis. Gunakan `targetRevision: master` jika branch ingin dinyatakan
+secara eksplisit, bukan mengikuti default branch melalui `HEAD`.
+
+### Sync Policy
+
+`api-dev` menggunakan automated sync:
+
+```yaml
+syncPolicy:
+  automated:
+    selfHeal: true
+    prune: true
+  syncOptions:
+    - CreateNamespace=true
+```
+
+| Opsi | Perilaku |
+|---|---|
+| `automated` | Menjalankan sync saat desired state berubah |
+| `selfHeal: true` | Mengembalikan perubahan manual cluster agar sesuai Git |
+| `prune: true` | Menghapus resource yang sudah dihapus dari Git |
+| `CreateNamespace=true` | Membuat namespace target jika belum tersedia |
+| `retry` | Mengulang sync yang gagal sementara dengan exponential backoff |
+
+Argo CD melakukan polling repository setiap sekitar tiga menit secara default,
+yaitu 120 detik ditambah jitter hingga 60 detik. GitHub webhook dapat ditambahkan
+untuk refresh lebih cepat, tetapi polling tetap menjadi mekanisme fallback yang
+sederhana dan tidak membutuhkan endpoint Argo CD publik.
+
+### Repository Access
+
+Repository public dapat dibaca langsung dari `repoURL` tanpa credential. Untuk
+repository private, gunakan GitHub fine-grained token read-only, SSH deploy key,
+atau GitHub App. Credential disimpan sebagai Secret di namespace `argocd`, bukan
+sebagai Kubernetes ServiceAccount.
+
+Contoh Secret untuk repository private:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-repository
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+type: Opaque
+stringData:
+  type: git
+  url: https://github.com/OWNER/REPOSITORY.git
+  username: OWNER
+  password: <github-fine-grained-token>
+```
+
+Jangan commit Secret yang berisi token. Buat melalui secret manager, External
+Secrets, Argo CD UI, atau perintah `argocd repo add`. Nilai `url` harus sama
+dengan `spec.source.repoURL` pada `Application`.
+
+### Akses Argo CD
+
+Gunakan port-forward agar server tidak perlu dibuka ke internet:
+
+```bash
+kubectl port-forward \
+  --namespace argocd \
+  service/argocd-server 8080:443
+```
+
+Buka `https://localhost:8080`. Username awal adalah `admin`. Ambil password awal
+dengan:
+
+```bash
+argocd admin initial-password --namespace argocd
+```
+
+Tanpa Argo CD CLI, baca Secret bootstrap secara langsung:
+
+```bash
+kubectl get secret argocd-initial-admin-secret \
+  --namespace argocd \
+  --output jsonpath='{.data.password}' | base64 --decode
+```
+
+Ganti password admin setelah login, lalu hapus
+`argocd-initial-admin-secret` karena Secret tersebut hanya menyimpan password
+bootstrap.
+
+```bash
+kubectl delete secret argocd-initial-admin-secret --namespace argocd
+```
 
 ## Traefik
 
@@ -175,26 +357,28 @@ Base aplikasi mendefinisikan Deployment, ClusterIP Service, dan Traefik
 | Komponen | Konfigurasi |
 |---|---|
 | Deployment | `api-app` |
-| Image | `unedotamps/api-app:latest` |
+| Image | `unedotamps/api-app:<dev-newTag>` |
 | Replica dev | 3 |
 | Container port | `8080` |
 | Service | `api-service:80` ke `8080` |
 | Liveness probe | `GET /healthz` pada port `8080` |
+| Rolling update | `maxSurge: 0`, `maxUnavailable: 1` |
 | Route | ``Host(`traefik.lensboxd.site`)`` |
 | EntryPoint | `api` |
 
 Source image contoh berada di [`../apps/api`](../apps/api).
-Aplikasi menyediakan endpoint `/`, `/healthz`, dan `/readyz` serta memakai nama
-Pod sebagai nilai `APP_NAME`.
+Aplikasi menyediakan endpoint `/`, `/hello`, `/healthz`, dan `/readyz` serta
+memakai nama Pod sebagai nilai `APP_NAME`.
 
-Tag image `latest` bersifat mutable. Untuk deployment yang repeatable, build dan
-push image dengan tag immutable, lalu perbarui manifest atau overlay Kustomize.
+Base masih memakai `latest` sebagai placeholder, sedangkan CI memperbarui
+`newTag` overlay `dev` ke tag immutable `sha-<commit>` melalui Pull Request.
 
 ## Prasyarat
 
 - Infrastruktur pada `aws_kube/provision` sudah selesai di-apply.
 - `kubectl` sudah terhubung ke cluster `lab-eks`.
 - Helm 3 tersedia.
+- Argo CD CLI bersifat opsional untuk login dan pengelolaan repository.
 - AWS CLI profile memiliki akses untuk membaca EKS dan Target Group.
 - Traefik CRD, termasuk `IngressRoute`, tersedia pada cluster.
 
@@ -284,21 +468,89 @@ kubectl -n traefik get service,pod,targetgroupbinding
 
 Gunakan overlay `lab`, bukan `base`, agar `TargetGroupBinding` ikut dibuat.
 
-### 6. Deploy Aplikasi Dev
-
-Pastikan Traefik CRD sudah tersedia, lalu jalankan:
+### 6. Install Argo CD
 
 ```bash
-kubectl apply -k aws_kube/k8s/apps/overlays/dev
+./aws_kube/k8s/platform/argocd/install.sh
 
-kubectl -n dev rollout status deployment/api-app
-kubectl -n dev get deployment,service,pod,ingressroute
+kubectl get pods --namespace argocd
+kubectl get crd applications.argoproj.io
 ```
 
-Gunakan overlay `dev`, bukan apply langsung ke `apps/base`, agar seluruh resource
-mendapat namespace dan jumlah replica yang benar.
+### 7. Daftarkan Aplikasi Dev
+
+Pastikan Traefik CRD dan Argo CD sudah tersedia, lalu jalankan:
+
+```bash
+kubectl apply -f \
+  aws_kube/k8s/platform/argocd/applications/api-dev.yaml
+
+kubectl get applications.argoproj.io --namespace argocd --output wide
+```
+
+Argo CD selanjutnya merender dan menerapkan overlay `dev`. Jangan melakukan
+`kubectl apply -k` pada overlay yang sama setelah dikelola Argo CD, karena
+`selfHeal` akan mengembalikan cluster ke desired state Git.
 
 ## Verifikasi End-to-End
+
+### Status Argo CD
+
+```bash
+kubectl get applications.argoproj.io \
+  --namespace argocd \
+  --output wide
+
+kubectl describe application api-dev --namespace argocd
+```
+
+Sync status dan health status mengukur hal yang berbeda:
+
+| Status | Arti |
+|---|---|
+| `Synced` | Live state sama dengan desired state pada revision Git |
+| `OutOfSync` | Git dan cluster berbeda; auto-sync belum atau sedang berjalan |
+| `Unknown` | Argo CD tidak dapat membandingkan state, biasanya karena repo, branch, path, credential, atau render error |
+| `Healthy` | Semua resource live dinilai sehat |
+| `Progressing` | Rollout belum selesai atau masih menunggu resource siap |
+| `Degraded` | Salah satu resource gagal atau tidak sehat |
+
+Jika sync status `Unknown`, lihat `status.conditions` dan log repo server:
+
+```bash
+kubectl get application api-dev \
+  --namespace argocd \
+  --output yaml
+
+kubectl logs \
+  --namespace argocd \
+  deployment/argocd-repo-server \
+  --since=15m
+```
+
+Periksa `repoURL`, `targetRevision`, source `path`, dan credential repository.
+Source path selalu relatif terhadap root repository Git.
+
+Jika health status `Progressing`, periksa rollout dan event workload:
+
+```bash
+kubectl get deployment,pod --namespace dev --output wide
+kubectl describe deployment api-app --namespace dev
+kubectl get events --namespace dev --sort-by=.lastTimestamp
+```
+
+Pod `Pending` dengan pesan `Too many pods` berarti kapasitas Pod node sudah
+tercapai, bukan masalah sinkronisasi Argo CD. Pod `ImagePullBackOff` biasanya
+menunjukkan tag image tidak tersedia atau registry membutuhkan credential.
+
+Minta Argo CD membaca ulang repository tanpa menunggu polling berikutnya:
+
+```bash
+kubectl annotate application api-dev \
+  --namespace argocd \
+  argocd.argoproj.io/refresh=hard \
+  --overwrite
+```
 
 ### Status Kubernetes
 
@@ -342,7 +594,7 @@ Jika request gagal, periksa secara berurutan:
 
 ## Update dan Rollback
 
-Render manifest sebelum apply untuk memeriksa hasil overlay:
+Render manifest sebelum merge untuk memeriksa hasil overlay:
 
 ```bash
 kubectl kustomize aws_kube/k8s/platform/traefik/overlays/lab
@@ -356,26 +608,36 @@ kubectl -n traefik rollout status deployment/traefik
 kubectl -n dev rollout status deployment/api-app
 ```
 
-Rollback Deployment menggunakan revision Kubernetes yang tersedia:
+Rollback aplikasi yang dikelola Argo CD dilakukan melalui Git. Revert commit
+manifest atau image tag, lalu merge melalui alur review normal:
 
 ```bash
-kubectl -n dev rollout history deployment/api-app
-kubectl -n dev rollout undo deployment/api-app
+git log --oneline -- aws_kube/k8s/apps/overlays/dev/kustomization.yaml
+git revert <commit-sha>
 ```
+
+Jangan mengandalkan `kubectl rollout undo` sebagai rollback permanen. Dengan
+`selfHeal: true`, Argo CD akan mengembalikan Deployment ke revision yang masih
+tercatat sebagai desired state di Git.
 
 ## Menghapus Workload
 
 Hapus aplikasi sebelum platform:
 
 ```bash
+kubectl delete -f \
+  aws_kube/k8s/platform/argocd/applications/api-dev.yaml
 kubectl delete -k aws_kube/k8s/apps/overlays/dev
 kubectl delete -k aws_kube/k8s/platform/traefik/overlays/lab
 helm uninstall traefik-crds --namespace traefik
 helm uninstall aws-load-balancer-controller --namespace kube-system
+helm uninstall argocd --namespace argocd
+kubectl delete namespace argocd
 kubectl delete -f aws_kube/k8s/namespace/
 ```
 
-Chart memakai `deleteOnUninstall=false`, sehingga uninstall release tidak
+Hapus `Application` lebih dahulu agar Argo CD tidak membuat workload kembali.
+Chart Traefik memakai `deleteOnUninstall=false`, sehingga uninstall release tidak
 menghapus CRD dan custom resource secara tidak sengaja. Pastikan target Pod sudah
 tidak terdaftar sebelum menghancurkan NLB atau EKS.
 
@@ -385,8 +647,11 @@ tidak terdaftar sebelum menghancurkan NLB atau EKS.
   akses ke Helm repository saat instalasi atau upgrade.
 - ARN Target Group pada `TargetGroupBinding` masih hard-coded.
 - VPC ID pada installer AWS Load Balancer Controller masih hard-coded.
-- Helm chart controller belum dipin ke versi tertentu.
-- Image aplikasi memakai tag mutable `latest`.
+- Installer AWS Load Balancer Controller dan Argo CD belum memin versi chart.
+- Base aplikasi memakai `latest` sebagai placeholder; overlay environment harus
+  selalu menggantinya dengan tag immutable.
 - Aplikasi belum memiliki readiness probe, resource request/limit, PDB, atau HPA.
 - Namespace `prod` belum memiliki workload overlay.
 - Domain pada `IngressRoute` masih spesifik untuk environment lab.
+- `AppProject/default` masih mengizinkan seluruh source repository, namespace,
+  dan cluster resource; buat project yang lebih sempit sebelum production.
