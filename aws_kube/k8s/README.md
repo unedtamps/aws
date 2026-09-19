@@ -3,7 +3,7 @@
 Folder ini berisi manifest Kubernetes untuk platform dan aplikasi yang berjalan
 di cluster EKS `lab-eks`. Kustomize digunakan untuk menyusun base dan overlay,
 sedangkan Helm digunakan untuk memasang controller platform seperti AWS Load
-Balancer Controller dan Argo CD.
+Balancer Controller, External Secrets Operator, dan Argo CD.
 
 Infrastruktur AWS yang menjadi dependensi folder ini dijelaskan pada
 [`../provision/README.md`](../provision/README.md).
@@ -79,6 +79,8 @@ k8s/
 |   |   `-- install.sh
 |   |-- aws-load-balancer-controller/
 |   |   `-- install.sh
+|   |-- external-secrets/
+|   |   `-- install.sh
 |   `-- traefik/
 |       |-- install-crds.sh
 |       |-- base/
@@ -94,6 +96,7 @@ k8s/
 | Namespace | Fungsi | Status penggunaan |
 |---|---|---|
 | `argocd` | Argo CD control plane dan resource `Application` | Aktif |
+| `external-secrets` | External Secrets Operator, webhook, dan certificate controller | Aktif |
 | `kube-system` | AWS Load Balancer Controller dan add-on cluster | Aktif |
 | `traefik` | Traefik dan `TargetGroupBinding` | Aktif |
 | `dev` | Workload aplikasi development | Aktif |
@@ -136,6 +139,126 @@ Pod Identity association terikat pada namespace `kube-system` dan ServiceAccount
 `aws-load-balancer-controller`; perintah rollout dan uninstall pada dokumen ini
 juga menggunakan nilai tersebut. Jika keduanya diubah, perbarui association
 OpenTofu dan seluruh perintah operasional secara bersamaan.
+
+## External Secrets Operator
+
+External Secrets Operator (ESO) mengambil value dari AWS Secrets Manager dan
+membuat Kubernetes Secret berdasarkan resource `ExternalSecret`. Controller ESO
+berjalan pada namespace `external-secrets` dengan ServiceAccount
+`external-secrets`. AWS access tidak memakai access key di Kubernetes; ESO
+mendapatkan temporary credentials melalui EKS Pod Identity.
+
+### Alur Secret
+
+```mermaid
+flowchart LR
+    awsSecret["AWS Secrets Manager<br/>lab-eks/external-secrets/app"]
+    iam["IAM role<br/>lab-eks-external-secrets"]
+
+    subgraph eks["Amazon EKS - lab-eks"]
+        association["EKS Pod Identity association<br/>external-secrets/external-secrets"]
+
+        subgraph esoNs["namespace: external-secrets"]
+            eso["External Secrets Operator"]
+        end
+
+        subgraph devNs["namespace: dev"]
+            store["SecretStore<br/>aws-secretsmanager"]
+            externalSecret["ExternalSecret<br/>api-app-credentials"]
+            k8sSecret["Kubernetes Secret<br/>api-app-credentials"]
+            api["api-app Pod<br/>USERNAME environment variable"]
+        end
+    end
+
+    iam --> association
+    association --> eso
+    eso -->|"GetSecretValue(username)"| awsSecret
+    eso -->|"watches"| store
+    store --> externalSecret
+    externalSecret -->|"creates"| k8sSecret
+    k8sSecret -->|"secretKeyRef"| api
+```
+
+OpenTofu membuat IAM role dan association. Helm membuat CRD, controller, dan
+ServiceAccount. `SecretStore` serta `ExternalSecret` dikelola oleh Kustomize
+bersama workload aplikasi. Karena `SecretStore` bersifat namespaced, keduanya
+berada pada namespace yang sama setelah overlay diterapkan. Base tidak
+mendefinisikan `metadata.namespace`; overlay `dev` menetapkannya menjadi `dev`.
+
+### Instalasi ESO
+
+Installer berada di:
+
+```text
+platform/external-secrets/install.sh
+```
+
+Jalankan setelah OpenTofu membuat Pod Identity association:
+
+```bash
+./aws_kube/k8s/platform/external-secrets/install.sh
+```
+
+Script memasang Helm chart resmi External Secrets Operator dengan CRD,
+controller, webhook, certificate controller, dan ServiceAccount
+`external-secrets` pada namespace `external-secrets`.
+
+Untuk menggunakan versi chart tertentu:
+
+```bash
+helm search repo external-secrets/external-secrets --versions
+
+ESO_CHART_VERSION=<tested-version> \
+  ./aws_kube/k8s/platform/external-secrets/install.sh
+```
+
+Verifikasi:
+
+```bash
+kubectl get crd \
+  externalsecrets.external-secrets.io \
+  secretstores.external-secrets.io
+
+kubectl -n external-secrets get serviceaccount external-secrets
+kubectl -n external-secrets rollout status deployment/external-secrets
+kubectl -n external-secrets get pods
+```
+
+### SecretStore dan ExternalSecret
+
+Manifest berada di `apps/base/secret.yaml` dan ikut dirender oleh overlay
+`apps/overlays/dev`. Provider AWS tidak memiliki blok `auth` karena controller
+menggunakan EKS Pod Identity.
+
+Secret AWS yang digunakan untuk testing adalah:
+
+```text
+lab-eks/external-secrets/app
+```
+
+Value secret diisi di luar Terraform dan Git:
+
+```bash
+AWS_PROFILE=dev aws secretsmanager put-secret-value \
+  --secret-id lab-eks/external-secrets/app \
+  --secret-string '{"username":"test-user"}' \
+  --region eu-north-1
+```
+
+`ExternalSecret` mengambil property `username` dan membuat Secret
+`api-app-credentials` pada namespace `dev`. Deployment `api-app` membaca key
+tersebut sebagai environment variable `USERNAME`. Endpoint `/` menampilkan
+username hanya untuk testing development dan tidak boleh dipakai untuk
+mengekspos secret pada production.
+
+Verifikasi sinkronisasi:
+
+```bash
+kubectl -n dev get secretstore aws-secretsmanager
+kubectl -n dev get externalsecret api-app-credentials
+kubectl -n dev get secret api-app-credentials
+kubectl -n dev describe externalsecret api-app-credentials
+```
 
 ## Argo CD
 
@@ -468,7 +591,20 @@ kubectl -n traefik get service,pod,targetgroupbinding
 
 Gunakan overlay `lab`, bukan `base`, agar `TargetGroupBinding` ikut dibuat.
 
-### 6. Install Argo CD
+### 6. Install External Secrets Operator
+
+Pod Identity association harus sudah tersedia sebelum controller dijalankan:
+
+```bash
+./aws_kube/k8s/platform/external-secrets/install.sh
+
+kubectl get crd \
+  externalsecrets.external-secrets.io \
+  secretstores.external-secrets.io
+kubectl -n external-secrets get pods
+```
+
+### 7. Install Argo CD
 
 ```bash
 ./aws_kube/k8s/platform/argocd/install.sh
@@ -477,9 +613,10 @@ kubectl get pods --namespace argocd
 kubectl get crd applications.argoproj.io
 ```
 
-### 7. Daftarkan Aplikasi Dev
+### 8. Daftarkan Aplikasi Dev
 
-Pastikan Traefik CRD dan Argo CD sudah tersedia, lalu jalankan:
+Pastikan Traefik CRD, External Secrets Operator, dan Argo CD sudah tersedia,
+lalu jalankan:
 
 ```bash
 kubectl apply -f \
