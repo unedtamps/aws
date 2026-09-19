@@ -19,6 +19,7 @@ module "eks" {
   node_role_arn                        = module.iam.node_role_arn
   vpc_cni_role_arn                     = module.iam.vpc_cni_role_arn
   load_balancer_controller_role_arn    = module.iam.load_balancer_controller_role_arn
+  external_secret_role_arn             = module.secret.external_secrets_role_arn
 
   # EKS resources must wait for the IAM roles and policy attachments.
   depends_on = [module.iam]
@@ -38,4 +39,9 @@ module "lb" {
 
   acm_certificate_arn = module.acm.certificate_arn
   ssl_policy          = var.nlb_ssl_policy
+}
+
+module "secret" {
+  source       = "./modules/secret"
+  cluster_name = var.cluster_name
 }

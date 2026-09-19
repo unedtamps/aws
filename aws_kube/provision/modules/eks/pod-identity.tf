@@ -28,3 +28,14 @@ resource "aws_eks_pod_identity_association" "aws_load_balancer_controller" {
     aws_eks_addon.pod_identity_agent,
   ]
 }
+
+resource "aws_eks_pod_identity_association" "external_secrets" {
+  cluster_name    = aws_eks_cluster.main.name
+  namespace       = "external-secrets"
+  service_account = "external-secrets"
+  role_arn        = var.external_secret_role_arn
+
+  depends_on = [
+    aws_eks_addon.pod_identity_agent,
+  ]
+}
