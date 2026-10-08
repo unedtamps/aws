@@ -2,8 +2,9 @@ FROM golang:1.27-alpine AS build
 
 WORKDIR /src
 
-COPY go.mod ./
-COPY main.go ./
+COPY go.mod go.sum ./
+RUN go mod download
+COPY *.go ./
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 	go build -trimpath -ldflags="-s -w" -o /out/go-healthcheck .

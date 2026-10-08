@@ -1,35 +1,113 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-func TestHealthEndpoints(t *testing.T) {
-	handler := newHandler()
+type stubPinger struct {
+	err    error
+	called int
+}
 
-	for _, path := range []string{"/healthz", "/readyz"} {
-		t.Run(path, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodGet, path, nil)
-			recorder := httptest.NewRecorder()
+func (s *stubPinger) Ping(context.Context) error {
+	s.called++
+	return s.err
+}
 
-			handler.ServeHTTP(recorder, request)
+func TestHealthEndpoint(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	recorder := httptest.NewRecorder()
 
-			if recorder.Code != http.StatusOK {
-				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
-			}
+	newHandler(&stubPinger{}).ServeHTTP(recorder, request)
 
-			var got response
-			if err := json.NewDecoder(recorder.Body).Decode(&got); err != nil {
-				t.Fatalf("decode response: %v", err)
-			}
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
 
-			if got.Status != "ok" {
-				t.Fatalf("status = %q, want %q", got.Status, "ok")
-			}
-		})
+	var got response
+	if err := json.NewDecoder(recorder.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if got.Status != "ok" {
+		t.Fatalf("status = %q, want %q", got.Status, "ok")
+	}
+}
+
+func TestReadyEndpointPingsDatabase(t *testing.T) {
+	pool := &stubPinger{}
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	recorder := httptest.NewRecorder()
+
+	newHandler(pool).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	if pool.called != 1 {
+		t.Fatalf("ping calls = %d, want 1", pool.called)
+	}
+
+	var got response
+	if err := json.NewDecoder(recorder.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if got.Status != "ok" {
+		t.Fatalf("status = %q, want %q", got.Status, "ok")
+	}
+}
+
+func TestReadyEndpointFailsWhenDatabaseDown(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	recorder := httptest.NewRecorder()
+
+	newHandler(&stubPinger{err: errors.New("connection refused")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusServiceUnavailable)
+	}
+
+	var got response
+	if err := json.NewDecoder(recorder.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if got.Status != "fail" {
+		t.Fatalf("status = %q, want %q", got.Status, "fail")
+	}
+}
+
+func TestHealthEndpointIgnoresDatabaseFailure(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	recorder := httptest.NewRecorder()
+
+	pool := &stubPinger{err: errors.New("connection refused")}
+	newHandler(pool).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	if pool.called != 0 {
+		t.Fatalf("ping calls = %d, want 0 — liveness harus bebas database", pool.called)
+	}
+}
+
+func TestReadyEndpointRejectsNonGET(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/readyz", nil)
+	recorder := httptest.NewRecorder()
+
+	newHandler(&stubPinger{}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusMethodNotAllowed)
 	}
 }
 
@@ -37,7 +115,7 @@ func TestRootEndpoint(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	recorder := httptest.NewRecorder()
 
-	newHandler().ServeHTTP(recorder, request)
+	newHandler(&stubPinger{}).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
@@ -59,7 +137,7 @@ func TestRootEndpointShowsUsername(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	recorder := httptest.NewRecorder()
 
-	newHandler().ServeHTTP(recorder, request)
+	newHandler(&stubPinger{}).ServeHTTP(recorder, request)
 
 	var got response
 	if err := json.NewDecoder(recorder.Body).Decode(&got); err != nil {
@@ -77,7 +155,7 @@ func TestHelloEndpointUsesAppName(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/hello", nil)
 	recorder := httptest.NewRecorder()
 
-	newHandler().ServeHTTP(recorder, request)
+	newHandler(&stubPinger{}).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
@@ -101,7 +179,7 @@ func TestMethodNotAllowed(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/healthz", nil)
 	recorder := httptest.NewRecorder()
 
-	newHandler().ServeHTTP(recorder, request)
+	newHandler(&stubPinger{}).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusMethodNotAllowed)

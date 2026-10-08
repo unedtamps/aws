@@ -6,5 +6,5 @@ variable "cluster_name" {
 variable "secret_name" {
   type        = string
   description = "Logical name of the secret."
-  default     = "external-secrets/app"
+  default     = "external-secrets/app-1"
 }

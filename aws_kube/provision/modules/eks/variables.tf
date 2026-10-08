@@ -43,3 +43,7 @@ variable "external_secret_role_arn" {
   description = "IAM role ARN used by the AWS Load Balancer Controller through EKS Pod Identity."
 
 }
+variable "eks_ebs_csi_controller_role_arn" {
+  type        = string
+  description = "IAM role ARN used by the EBS CSI driver through EKS Pod Identity."
+}

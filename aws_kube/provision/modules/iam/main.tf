@@ -145,3 +145,31 @@ resource "aws_iam_role_policy" "aws_load_balancer_controller" {
   role   = aws_iam_role.aws_load_balancer_controller.id
   policy = data.aws_iam_policy_document.aws_load_balancer_controller.json
 }
+
+data "aws_iam_policy_document" "eks_ebs_csi_controller_assume_role" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "sts:AssumeRole",
+      "sts:TagSession"
+    ]
+    principals {
+      type        = "Service"
+      identifiers = ["pods.eks.amazonaws.com"]
+    }
+
+  }
+}
+
+resource "aws_iam_role" "eks_ebs_csi_controller" {
+  name               = "${var.cluster_name}-eks-ebs-csi-controller"
+  assume_role_policy = data.aws_iam_policy_document.eks_ebs_csi_controller_assume_role.json
+  tags = {
+    Name = "${var.cluster_name}-aws-ebs-csi-controller"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "eks_ebs_csi_controller" {
+  role       = aws_iam_role.eks_ebs_csi_controller.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEBSCSIDriverEKSClusterScopedPolicy"
+}

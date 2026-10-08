@@ -20,6 +20,7 @@ module "eks" {
   vpc_cni_role_arn                     = module.iam.vpc_cni_role_arn
   load_balancer_controller_role_arn    = module.iam.load_balancer_controller_role_arn
   external_secret_role_arn             = module.secret.external_secrets_role_arn
+  eks_ebs_csi_controller_role_arn      = module.iam.eks_ebs_csi_controller_role_arn
 
   # EKS resources must wait for the IAM roles and policy attachments.
   depends_on = [module.iam]

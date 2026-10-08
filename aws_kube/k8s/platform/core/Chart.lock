@@ -11,5 +11,8 @@ dependencies:
 - name: traefik
   repository: https://traefik.github.io/charts
   version: 41.6.1
-digest: sha256:1e7aaf899f3d882d27f2d6e40685dab5b38ab2ef7462fe206152bdf909bbe598
-generated: "2026-10-08T00:18:45.593911508+07:00"
+- name: aws-ebs-csi-driver
+  repository: https://kubernetes-sigs.github.io/aws-ebs-csi-driver
+  version: 2.66.0
+digest: sha256:8b78bd2230fc9db9cd9d6b5e860ba7e766361136040d34bb270746d8ba2925de
+generated: "2026-10-08T21:37:49.048250769+07:00"

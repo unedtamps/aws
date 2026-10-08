@@ -24,3 +24,7 @@ output "external_secret_name" {
 output "external_secret_arn" {
   value = module.secret.secret_arn
 }
+output "vpc_id" {
+  value = module.networking.vpc_id
+
+}

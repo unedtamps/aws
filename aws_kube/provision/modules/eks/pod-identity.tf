@@ -39,3 +39,13 @@ resource "aws_eks_pod_identity_association" "external_secrets" {
     aws_eks_addon.pod_identity_agent,
   ]
 }
+
+resource "aws_eks_pod_identity_association" "ebs-csi" {
+  cluster_name    = aws_eks_cluster.main.name
+  namespace       = "kube-system"
+  service_account = "ebs-csi-controller-sa"
+  role_arn        = var.eks_ebs_csi_controller_role_arn
+
+  depends_on = [aws_eks_addon.pod_identity_agent]
+
+}

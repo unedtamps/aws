@@ -4,6 +4,25 @@ platform:
     - argocd
     - external-secrets
 
+aws-ebs-csi-driver:
+  controller:
+    k8sTagClusterId: lab-eks  
+    serviceAccount:
+      name: ebs-csi-controller-sa
+  node:
+    serviceAccount:
+      name: ebs-csi-node-sa
+    enableWindows: false
+  storageClasses:
+    - name: gp3
+      parameters:
+        type: gp3
+        encrypted: "true"
+        fsType: ext4
+      reclaimPolicy: Retain
+      volumeBindingMode: WaitForFirstConsumer
+      allowVolumeExpansion: true
+
 aws-load-balancer-controller:
   clusterName: lab-eks
   region: eu-north-1
@@ -76,3 +95,5 @@ traefik:
     limits:
       cpu: 200m
       memory: 128Mi
+
+

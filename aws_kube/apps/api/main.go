@@ -21,9 +21,15 @@ type response struct {
 }
 
 func main() {
+	pool, err := openDB(context.Background())
+	if err != nil {
+		log.Fatalf("invalid database configuration: %v", err)
+	}
+	defer pool.Close()
+
 	server := &http.Server{
 		Addr:              ":" + envOrDefault("PORT", "8080"),
-		Handler:           newHandler(),
+		Handler:           newHandler(pool),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -54,7 +60,7 @@ func main() {
 	}
 }
 
-func newHandler() http.Handler {
+func newHandler(pool pinger) http.Handler {
 	service := envOrDefault("APP_NAME", "go-healthcheck")
 	environment := envOrDefault("APP_ENV", "local")
 	username := envOrDefault("USERNAME", "")
@@ -63,7 +69,7 @@ func newHandler() http.Handler {
 	mux.HandleFunc("/", rootHandler(service, environment, username))
 	mux.HandleFunc("/hello", helloHandler(service))
 	mux.HandleFunc("/healthz", healthHandler)
-	mux.HandleFunc("/readyz", healthHandler)
+	mux.HandleFunc("/readyz", readinessHandler(pool))
 
 	return mux
 }
@@ -107,6 +113,31 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response{Status: "ok"})
+}
+
+func readinessHandler(pool pinger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+
+		if err := pool.Ping(ctx); err != nil {
+			log.Printf("readiness database ping failed: %v", err)
+
+			writeJSON(w, http.StatusServiceUnavailable, response{
+				Message: "database unavailable",
+				Status:  "fail",
+			})
+
+			return
+		}
+
+		writeJSON(w, http.StatusOK, response{Status: "ok"})
+	}
 }
 
 func methodNotAllowed(w http.ResponseWriter) {
