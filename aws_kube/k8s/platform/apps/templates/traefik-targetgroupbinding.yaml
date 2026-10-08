@@ -1,0 +1,13 @@
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: {{ .Values.targetGroup.serviceName }}
+  namespace: {{ .Values.targetGroup.serviceNamespace }}
+  labels:
+    {{- include "platform-apps.labels" . | nindent 4 }}
+spec:
+  serviceRef:
+    name: {{ .Values.targetGroup.serviceName }}
+    port: {{ .Values.targetGroup.servicePort }}
+  targetType: ip
+  targetGroupARN: {{ .Values.targetGroup.arn | quote }}

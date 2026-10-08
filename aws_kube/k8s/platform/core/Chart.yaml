@@ -1,0 +1,16 @@
+apiVersion: v2
+name: platform
+version: 0.1.0
+dependencies:
+  - name: aws-load-balancer-controller
+    version: 3.6.0
+    repository: https://aws.github.io/eks-charts
+  - name: external-secrets
+    version: 2.12.0
+    repository: https://charts.external-secrets.io
+  - name: argo-cd
+    version: 10.10.0
+    repository: https://argoproj.github.io/argo-helm
+  - name: traefik
+    version: 41.6.1
+    repository: https://traefik.github.io/charts

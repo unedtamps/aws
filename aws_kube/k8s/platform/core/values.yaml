@@ -1,0 +1,78 @@
+platform:
+  namespaces:
+    - traefik
+    - argocd
+    - external-secrets
+
+aws-load-balancer-controller:
+  clusterName: lab-eks
+  region: eu-north-1
+  vpcId: vpc-04b8aac84a36b4d0e
+  fullnameOverride: aws-load-balancer-controller
+
+external-secrets:
+  namespaceOverride: external-secrets
+  fullnameOverride: external-secrets
+  installCRDs: true
+  serviceAccount:
+    create: true
+    name: external-secrets
+
+argo-cd:
+  namespaceOverride: argocd
+  fullnameOverride: argocd
+
+traefik:
+  namespaceOverride: traefik
+  fullnameOverride: traefik
+
+  deployment:
+    replicas: 3
+    healthchecksPort: 8000
+
+  ports:
+    api:
+      port: 8000
+      exposedPort: 80
+      expose:
+        default: true
+      protocol: TCP
+    web: null
+    websecure: null
+    metrics: null
+    traefik: null
+
+  metrics:
+    prometheus: null
+  additionalArguments:
+    - "--ping.entrypoint=api"
+
+  api:
+    dashboard: false
+
+  providers:
+    kubernetesCRD:
+      enabled: true
+      namespaces:
+        - dev
+        - prod
+    kubernetesIngress:
+      enabled: false
+
+  service:
+    spec:
+      type: ClusterIP
+
+  livenessProbe:
+    periodSeconds: 30
+
+  readinessProbe:
+    failureThreshold: 3
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi

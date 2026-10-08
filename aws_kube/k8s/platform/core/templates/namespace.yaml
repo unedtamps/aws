@@ -1,0 +1,13 @@
+{{- range .Values.platform.namespaces }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ . }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": "none"
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+{{- end }}

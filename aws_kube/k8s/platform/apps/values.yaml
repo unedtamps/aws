@@ -1,0 +1,24 @@
+
+targetGroup:
+  arn: "arn:aws:elasticloadbalancing:eu-north-1:246830848520:targetgroup/lab-eks-traefik-http/2cba9b52f2bcd034"
+  serviceName: traefik
+  serviceNamespace: traefik
+  servicePort: 80
+
+applications:
+  - name: api-dev
+    namespace: argocd
+    project: default
+    repoURL: https://github.com/unedtamps/aws.git
+    targetRevision: HEAD
+    path: aws_kube/k8s/apps/overlays/dev
+    destinationServer: https://kubernetes.default.svc
+    destinationNamespace: dev
+    selfHeal: true
+    prune: true
+    createNamespace: true
+    retryLimit: 5
+    retryBackoffDuration: 5s
+    retryBackoffFactor: 2
+    retryBackoffMaxDuration: 10m
+    manifestGeneratePaths: ".;../../base"

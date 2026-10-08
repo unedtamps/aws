@@ -1,0 +1,37 @@
+{{- range .Values.applications }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .name }}
+  namespace: {{ .namespace }}
+  {{- with .manifestGeneratePaths }}
+  annotations:
+    argocd.argoproj.io/manifest-generate-paths: {{ . | quote }}
+  {{- end }}
+  labels:
+    {{- include "platform-apps.labels" $ | nindent 4 }}
+spec:
+  project: {{ .project }}
+  source:
+    repoURL: {{ .repoURL }}
+    targetRevision: {{ .targetRevision }}
+    path: {{ .path }}
+  destination:
+    server: {{ .destinationServer }}
+    namespace: {{ .destinationNamespace }}
+  syncPolicy:
+    automated:
+      selfHeal: {{ .selfHeal }}
+      prune: {{ .prune }}
+    {{- if .createNamespace }}
+    syncOptions:
+      - CreateNamespace=true
+    {{- end }}
+    retry:
+      limit: {{ .retryLimit }}
+      backoff:
+        duration: {{ .retryBackoffDuration }}
+        factor: {{ .retryBackoffFactor }}
+        maxDuration: {{ .retryBackoffMaxDuration }}
+{{- end }}

@@ -1,0 +1,15 @@
+dependencies:
+- name: aws-load-balancer-controller
+  repository: https://aws.github.io/eks-charts
+  version: 3.6.0
+- name: external-secrets
+  repository: https://charts.external-secrets.io
+  version: 2.12.0
+- name: argo-cd
+  repository: https://argoproj.github.io/argo-helm
+  version: 10.10.0
+- name: traefik
+  repository: https://traefik.github.io/charts
+  version: 41.6.1
+digest: sha256:1e7aaf899f3d882d27f2d6e40685dab5b38ab2ef7462fe206152bdf909bbe598
+generated: "2026-10-08T00:18:45.593911508+07:00"

@@ -1,0 +1,13 @@
+# Artefak dan file yang tidak perlu ikut saat chart di-package.
+
+.git/
+.gitignore
+.helmignore
+
+Makefile
+rendered.yaml
+
+*.tmp
+*.bak
+*.swp
+.DS_Store

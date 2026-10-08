@@ -1,0 +1,99 @@
+================================================================
+  {{ .Release.Name }}  |  {{ .Chart.Name }}-{{ .Chart.Version }}
+  release namespace : {{ .Release.Namespace }}
+================================================================
+
+Release ini memasang controller: aws-load-balancer-controller,
+external-secrets, argo-cd, traefik.
+
+---------------------------------------------------------------
+NAMESPACE
+---------------------------------------------------------------
+Release ini tidak membuat namespace. argocd, traefik, dan
+external-secrets dibuat manual SEBELUM install:
+
+  kubectl apply -f aws_kube/k8s/namespace/
+
+Namespace di luar lifecycle Helm: helm uninstall tidak
+menghapusnya.
+
+---------------------------------------------------------------
+LANGKAH BERIKUTNYA  (WAJIB, TIDAK ADA DI RELEASE INI)
+---------------------------------------------------------------
+Argo CD Application dan TargetGroupBinding ada di chart
+terpisah: ../apps
+
+  make -C ../core wait
+  make -C ../apps install
+
+Chart ../apps tidak bisa di-install sebelum release ini. Resource
+di sana memakai CRD yang baru ada setelah release ini terpasang.
+Kalau di-apply lebih dulu, helm akan menolak dengan:
+  no matches for kind "Application"
+
+Namespace 'dev' dan 'prod' tidak dibuat release ini. 'dev'
+dibuat sendiri oleh Argo CD saat sync pertama
+(CreateNamespace=true), 'prod' belum dipakai.
+
+---------------------------------------------------------------
+VERIFIKASI
+---------------------------------------------------------------
+  make status                   # semua workload lintas namespace
+  kubectl get ns
+  kubectl -n traefik get deploy,svc
+  kubectl get targetgroupbinding -A
+
+---------------------------------------------------------------
+ARGO CD  (belum ada ingress, jadi port-forward)
+---------------------------------------------------------------
+  kubectl -n argocd port-forward svc/argocd-server 8080:443
+  lalu buka : https://localhost:8080
+
+  user : admin
+  pass : kubectl -n argocd get secret argocd-initial-admin-secret \
+           -o jsonpath='{.data.password}' | base64 -d
+
+  Catatan: secret itu dibuat oleh Argo CD saat server boot
+  pertama. Kalau masih NotFound, tunggu beberapa detik.
+
+---------------------------------------------------------------
+TIGA HAL YANG TIDAK TERLIHAT DARI helm status
+---------------------------------------------------------------
+
+1. CRD TIDAK DI-UPGRADE OLEH HELM
+   traefik (25 CRD) dan aws-load-balancer-controller memasang
+   CRD lewat folder crds/. Helm memasangnya sekali, lalu
+   melewatkannya selamanya. helm upgrade TIDAK memperbaruinya.
+   Untuk update CRD harus apply manual, hati-hati.
+
+   Sebaliknya, CRD argoproj.io dan external-secrets.io dibuat
+   lewat templates/ dan DI-UPGRADE oleh helm.
+
+2. TARGETGROUP BUKAN BAGIAN RELEASE INI
+   TargetGroupBinding ada di chart ../apps, dengan ARN-nya di
+   ../apps/values.yaml (targetGroup.arn). Kalau terraform
+   me-recreate target group, ARN berubah dan binding tidak akan
+   konek tanpa error. Cek dari folder provision:
+
+     terraform output -raw traefik_target_group_arn
+
+   Kalau berubah, update ../apps/values.yaml lalu:
+     make -C ../apps upgrade
+
+3. helm uninstall TIDAK menghapus namespace
+   Release ini tidak memiliki namespace apa pun. Saat release
+   dicabut, argocd/traefik/external-secrets beserta isinya
+   tetap ada. Hapus manual bila perlu:
+     kubectl delete namespace argocd traefik external-secrets
+
+   Argo CD Application dan TargetGroupBinding juga di luar
+   release ini:
+     make -C ../apps uninstall UNINSTALL_CONFIRM=yes
+
+---------------------------------------------------------------
+PERINTAH LAIN
+---------------------------------------------------------------
+  helm status       {{ .Release.Name }} -n {{ .Release.Namespace }}
+  helm get manifest {{ .Release.Name }} -n {{ .Release.Namespace }}
+  helm get values   {{ .Release.Name }} -n {{ .Release.Namespace }}
+  helm get notes    {{ .Release.Name }} -n {{ .Release.Namespace }}
