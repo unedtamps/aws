@@ -1,14 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-
 resources:
   - ../../base
-
 namespace: dev
 images:
   - name: unedotamps/api-app
     newTag: sha-228b4342023d2ecf9d6cfb7c60bc158a8717823a
-
 replicas:
   - name: api-app
     count: 3

@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS cars_created_at_idx ON cars (created_at);

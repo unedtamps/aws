@@ -902,6 +902,65 @@ Patroni, yang di luar cakupan repo ini.
 Base memakai `latest` sebagai placeholder; CI memperbarui `newTag` overlay
 `dev` ke tag immutable `sha-<commit>` melalui Pull Request.
 
+### Migrasi dan Seed Otomatis
+
+Aplikasi menjalankan migrasi sendiri setiap start, sebelum membuka listener HTTP.
+File SQL di-embed ke binary lewat `//go:embed`, jadi tidak ada file terpisah yang
+perlu dibawa ke dalam image.
+
+| File | Isi |
+| --- | --- |
+| `migrations/0001_create_cars_table.sql` | tabel `cars` |
+| `migrations/0002_index_cars_created_at.sql` | index `cars_created_at_idx` |
+
+Urutannya di `main()`: `openDB` → tunggu DB → migrasi → seed → listen.
+
+**Versioning memakai tabel `schema_migrations`.** Nama file migration disimpan
+setelah SQL dieksekusi dalam satu transaksi, jadi file yang sama tidak pernah
+dijalankan dua kali.
+
+> Nama file wajib zero-padded (`0001_`, `0002_`, …) karena urutan eksekusi
+> ditentukan leksikografis, bukan oleh urutan file di direktori. Menambahkan
+> `0003_` aman; mengubah nama file yang sudah pernah ter-deploy **tidak** aman
+> karena akan terbaca sebagai migration baru.
+
+**Advisory lock dipakai karena `replicas: 3`.** Ketiga Pod start bersamaan dan
+semuanya menjalankan migrasi. `pg_advisory_lock` men-serialize mereka: satu
+memegang lock, yang lain menunggu lalu membaca `schema_migrations` dan menemukan
+tidak ada yang perlu dijalankan. Tanpa lock, `0001` bisa dieksekusi tiga kali
+secara bersamaan — `CREATE TABLE IF NOT EXISTS` saja tidak cukup untuk
+mencegah itu.
+
+> Nilai `migrationLockID` di `migrate.go` **tidak boleh diubah** selama Pod
+> masih berjalan. Pod yang sudah memegang lock dengan nilai lama akan menggantung
+> sampai Pod-nya di-restart.
+
+**Seed mengisi tabel `cars`.** Data dibuat acak, tetapi **deterministik**:
+`rand.NewSource` dengan nilai tetap. Ini bukan kebetulan — kalau tiap replica
+mengacak sendiri, kombinasi `brand`/`model`/`year` tidak akan pernah sama antar
+replica, `ON CONFLICT` tidak akan pernah cocok, dan tiap start akan menambah 12
+baris baru. Seed nilai tetap membuat semua replica dan semua restart menghasilkan
+urutan identik sehingga data converge ke jumlah baris yang sama.
+
+| Env | Default | Fungsi |
+| --- | --- | --- |
+| `SEED_CARS` | `12` | jumlah mobil yang di-seed |
+| `SEED_RANDOM` | `42` | nilai seed PRNG |
+
+> Mengubah `SEED_RANDOM` akan menghasilkan mobil yang **ditambahkan**, bukan
+> menggantikan — baris lama tetap ada karena `ON CONFLICT` hanya melewati
+> kombinasi yang sudah ada. Tabel akan bertambah, tidak tergantikan. Menghapus
+> tabel (`DROP TABLE cars`) adalah cara untuk mulai ulang dari data seed baru.
+
+Endpoint `GET /cars` membaca tabel tersebut:
+
+```bash
+curl -s "$DOMAIN/cars" | jq '.count, .cars[0]'
+```
+
+Kriteria unik `cars_brand_model_year_key` bukan hanya untuk `ON CONFLICT`, tetapi
+sekaligus membatasi duplikasi di level database.
+
 ### Menambah Domain
 
 Satu NLB dapat melayani banyak domain, tetapi tiga hal harus berubah:

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -20,16 +21,36 @@ type response struct {
 	Username    string `json:"username,omitempty"`
 }
 
+type carsResponse struct {
+	Cars   []car  `json:"cars"`
+	Count  int    `json:"count"`
+	Status string `json:"status"`
+}
+
 func main() {
-	pool, err := openDB(context.Background())
+	ctx := context.Background()
+
+	pool, err := openDB(ctx)
 	if err != nil {
 		log.Fatalf("invalid database configuration: %v", err)
 	}
 	defer pool.Close()
 
+	if err := waitForDatabase(ctx, pool, dbWaitAttempts, dbWaitDelay); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	if err := RunMigrations(ctx, pool); err != nil {
+		log.Fatalf("migration failed: %v", err)
+	}
+
+	if err := Seed(ctx, pool); err != nil {
+		log.Fatalf("seed failed: %v", err)
+	}
+
 	server := &http.Server{
 		Addr:              ":" + envOrDefault("PORT", "8080"),
-		Handler:           newHandler(pool),
+		Handler:           newHandler(carStore{pool: pool}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -60,7 +81,7 @@ func main() {
 	}
 }
 
-func newHandler(pool pinger) http.Handler {
+func newHandler(db database) http.Handler {
 	service := envOrDefault("APP_NAME", "go-healthcheck")
 	environment := envOrDefault("APP_ENV", "local")
 	username := envOrDefault("USERNAME", "")
@@ -69,7 +90,8 @@ func newHandler(pool pinger) http.Handler {
 	mux.HandleFunc("/", rootHandler(service, environment, username))
 	mux.HandleFunc("/hello", helloHandler(service))
 	mux.HandleFunc("/healthz", healthHandler)
-	mux.HandleFunc("/readyz", readinessHandler(pool))
+	mux.HandleFunc("/readyz", readinessHandler(db))
+	mux.HandleFunc("/cars", carsHandler(db))
 
 	return mux
 }
@@ -140,6 +162,40 @@ func readinessHandler(pool pinger) http.HandlerFunc {
 	}
 }
 
+func carsHandler(db database) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		cars, err := db.ListCars(ctx)
+		if err != nil {
+			log.Printf("list cars failed: %v", err)
+
+			writeJSON(w, http.StatusServiceUnavailable, response{
+				Message: "database unavailable",
+				Status:  "fail",
+			})
+
+			return
+		}
+
+		if cars == nil {
+			cars = []car{}
+		}
+
+		writeJSON(w, http.StatusOK, carsResponse{
+			Cars:   cars,
+			Count:  len(cars),
+			Status: "ok",
+		})
+	}
+}
+
 func methodNotAllowed(w http.ResponseWriter) {
 	w.Header().Set("Allow", http.MethodGet)
 	writeJSON(w, http.StatusMethodNotAllowed, response{
@@ -148,7 +204,7 @@ func methodNotAllowed(w http.ResponseWriter) {
 	})
 }
 
-func writeJSON(w http.ResponseWriter, status int, value response) {
+func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
@@ -163,4 +219,19 @@ func envOrDefault(name, fallback string) string {
 	}
 
 	return fallback
+}
+
+func envIntOrDefault(name string, fallback int) int {
+	value := os.Getenv(name)
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		log.Printf("%s=%q is not a valid integer, using %d", name, value, fallback)
+		return fallback
+	}
+
+	return parsed
 }
