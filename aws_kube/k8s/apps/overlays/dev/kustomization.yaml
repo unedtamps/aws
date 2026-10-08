@@ -5,7 +5,7 @@ resources:
 namespace: dev
 images:
   - name: unedotamps/api-app
-    newTag: sha-228b4342023d2ecf9d6cfb7c60bc158a8717823a
+    newTag: sha-b2d1bb828aa33935d58c31125717ff2f05cf8b62
 replicas:
   - name: api-app
     count: 3
