@@ -9,7 +9,7 @@ variable "instance_count" {
 }
 variable "instance_names" {
   type    = list(string)
-  default = ["ec2-ans-1", "ec2-ans-2", "ec2-ans-3"]
+  default = ["ec2-ans-0", "ec2-ans-1", "ec2-ans-2"]
 }
 
 variable "instance_ami_id" {

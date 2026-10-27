@@ -50,6 +50,35 @@ resource "aws_key_pair" "key_ans" {
   public_key = file("./key/ansible-key.pub")
 }
 
+resource "aws_security_group" "sg_http_ans" {
+  vpc_id = aws_vpc.vpc_ans.id
+  name   = "http-sg"
+  ingress {
+    description = "http"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  ingress {
+    description = "https"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = {
+    Name = "http-sg"
+  }
+
+}
+
 resource "aws_security_group" "sg_ans" {
   vpc_id      = aws_vpc.vpc_ans.id
   name        = "ansible-sg"
@@ -61,6 +90,15 @@ resource "aws_security_group" "sg_ans" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  ingress {
+    description     = "HTTP From Lb"
+    from_port       = 8000
+    to_port         = 8020
+    protocol        = "tcp"
+    security_groups = [aws_security_group.sg_http_ans.id]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -81,9 +119,8 @@ resource "aws_instance" "ec2_ans" {
   tags = {
     Name = var.instance_names[count.index]
   }
-  vpc_security_group_ids = [aws_security_group.sg_ans.id]
+  vpc_security_group_ids = count.index == 0 ? [aws_security_group.sg_ans.id, aws_security_group.sg_http_ans.id] : [aws_security_group.sg_ans.id]
 }
-
 
 resource "aws_eip" "name" {
   count    = var.instance_count

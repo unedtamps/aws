@@ -1,0 +1,41 @@
+- name: Baseline setup for workers
+  hosts: workers
+  become: true
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+    - name: Install useful packages
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - git
+        - curl
+        - htop
+    - name: Show Host Info
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} role={{ app_role }}"
+- name: Baseline setup for control
+  hosts: control
+  become: true
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+    - name: Install useful packages
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - git
+        - curl
+        - htop
+    - name: Install nginx
+      ansible.builtin.include_role:
+        name: nginx
+    - name: Show Host Info
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} role={{ app_role }}"
