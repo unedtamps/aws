@@ -1,0 +1,12 @@
+all:
+  children:
+    control:
+      hosts:
+        ec2-ans-0:
+          ansible_host: 13.61.238.246
+    workers:
+      hosts:
+        ec2-ans-1:
+          ansible_host: 13.48.52.97
+        ec2-ans-2:
+          ansible_host: 16.192.89.247
