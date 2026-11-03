@@ -1,38 +1,49 @@
-Role Name
-=========
+# reverse_proxy
 
-A brief description of the role goes here.
+Installs NGINX on the control node (`ec2-ans-0`) and turns it into the
+reverse proxy for the two lab apps, which run in Docker containers on the
+workers.
 
-Requirements
-------------
+## What it does
 
-Any pre-requisites that may not be covered by Ansible itself or the role should be mentioned here. For instance, if the role uses the EC2 module, it may be a good idea to mention in this section that the boto package is required.
+1. Installs NGINX from apt.
+2. Removes the distro default site.
+3. Renders `templates/config.j2` to
+   `/etc/nginx/sites-available/ansiible-lab.conf` and enables it via symlink
+   in `sites-enabled/`.
+4. Validates with `nginx -t` and reloads NGINX on every config change.
 
-Role Variables
---------------
+## Routing (multi-domain on port 80 of the control node)
 
-A description of the settable variables for this role should go here, including any variables that are in defaults/main.yml, vars/main.yml, and any variables that can/should be set via parameters to the role. Any variables that are read from other roles and/or the global scope (ie. hostvars, group vars, etc.) should be mentioned here as well.
+| Vhost (`server_name`)            | Upstream                 | Notes                                        |
+|----------------------------------|--------------------------|----------------------------------------------|
+| `ansible-app.lensboxd.site`      | `ansible_app` upstream   | Go API (`unedotamps/ansible-app`, port 8000) |
+| `ansible-page.lensboxd.site`     | `ansiible_page` upstream | Astro static site (image `unedotamps/ansible-page`, port 8080) |
+| anything else (default_server)   | -                        | `return 444` (drop unknown Host headers)     |
 
-Dependencies
-------------
+DNS: both subdomains need A records pointing at the control node's EIP —
+the only node with the `http-sg` security group (80/443 open to the world).
 
-A list of other roles hosted on Galaxy should go here, plus any details in regards to parameters that may need to be set for other roles, or variables that are used from other roles.
+Upstream servers are built from the `workers` inventory group — the proxy
+targets every worker's app ports, and `proxy_connect_timeout 2s` makes nginx
+fail over to the next worker quickly when one is down.
 
-Example Playbook
-----------------
+## Role variables (`defaults/main.yml`)
 
-Including an example of how to use your role (for instance, with variables passed in as parameters) is always nice for users too:
+| Variable                   | Default        | Description |
+|----------------------------|----------------|-------------|
+| `reverse_proxy_app_port`   | `8000`         | Port the Go API container listens on |
+| `reverse_proxy_page_port`  | `8080`         | Port the static page container listens on |
+| `reverse_proxy_domain`     | `lensboxd.site`| Domain both vhosts live under |
 
-    - hosts: servers
-      roles:
-         - { role: username.rolename, x: 42 }
+Both ports must stay inside `8000-8020`, the range `ansible-sg` allows in
+from `http-sg` (the control node's traffic).
 
-License
--------
+## Traffic flow
 
-BSD
-
-Author Information
-------------------
-
-An optional section for the role authors to include contact information, or a website (HTML is not allowed).
+```
+internet --> DNS (ansible-app./ansible-page.lensboxd.site -> control EIP)
+         :80 -> control (http-sg) -> nginx vhosts
+                                     |-> workers :8000 (ansible-app, via ansible-sg 8000-8020)
+                                     `-> workers :8080 (ansiible-page, via ansible-sg 8000-8020)
+```

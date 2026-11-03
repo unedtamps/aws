@@ -1,3 +1,11 @@
 #SPDX-License-Identifier: MIT-0
 ---
-# defaults file for nginx
+# defaults file for reverse_proxy
+#
+# Ports the app containers listen on. Both must stay inside the
+# 8000-8020 range that ansible-sg allows in from http-sg (the control node).
+reverse_proxy_app_port: 8000
+reverse_proxy_page_port: 8080
+
+# Public domain both app vhosts live under (A records -> control node EIP)
+reverse_proxy_domain: lensboxd.site

@@ -1,0 +1,64 @@
+# {{ ansible_managed }}
+# Reverse proxy for the ansible_lab apps (roles/reverse_proxy).
+#
+# Multi-domain routing: one vhost per app under {{ reverse_proxy_domain }}.
+# Upstreams are built from the workers inventory group; both ports must
+# stay inside the 8000-8020 range ansible-sg allows in from http-sg.
+
+upstream ansible_app {
+{% for host in groups['workers'] %}
+    server {{ hostvars[host]['ansible_host'] }}:{{ reverse_proxy_app_port }};
+{% endfor %}
+}
+
+upstream ansiible_page {
+{% for host in groups['workers'] %}
+    server {{ hostvars[host]['ansible_host'] }}:{{ reverse_proxy_page_port }};
+{% endfor %}
+}
+
+# API vhost (ansible-app, Go)
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ansible-app.{{ reverse_proxy_domain }};
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    # fail over to the next worker quickly when one is down
+    proxy_connect_timeout 2s;
+
+    location / {
+        proxy_pass http://ansible_app;
+    }
+}
+
+# static site vhost (ansiible-page)
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ansible-page.{{ reverse_proxy_domain }};
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    # fail over to the next worker quickly when one is down
+    proxy_connect_timeout 2s;
+
+    location / {
+        proxy_pass http://ansiible_page;
+    }
+}
+
+# catch-all: drop requests with an unknown Host header
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 444;
+}

@@ -13,9 +13,9 @@
       with_items:
         - git
         - curl
-    - name: Install nginx
+    - name: Install reverse proxy
       ansible.builtin.include_role:
-        name: nginx
+        name: reverse_proxy
     - name: Show Host Info
       ansible.builtin.debug:
         msg: "{{ inventory_hostname }} role={{ app_role }}"

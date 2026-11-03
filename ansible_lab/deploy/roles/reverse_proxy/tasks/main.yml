@@ -1,5 +1,5 @@
 #SPDX-License-Identifier: MIT-0
-# tasks file for nginx
+# tasks file for reverse_proxy
 #
 - name: Update apt cache
   ansible.builtin.apt:
@@ -9,6 +9,25 @@
   ansible.builtin.apt:
     name: nginx
     state: present
+- name: Remove default nginx site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+- name: Deploy reverse proxy site config
+  ansible.builtin.template:
+    src: config.j2
+    dest: /etc/nginx/sites-available/ansiible-lab.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload nginx
+- name: Enable reverse proxy site config
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/ansiible-lab.conf
+    dest: /etc/nginx/sites-enabled/ansiible-lab.conf
+    state: link
+  notify: Reload nginx
 - name: Ensure NGINX is running and enabled
   ansible.builtin.service:
     name: nginx
