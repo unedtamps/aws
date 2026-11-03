@@ -1,0 +1,152 @@
+---
+const app = "ansiible-page";
+const year = new Date().getFullYear();
+
+const stack = [
+  {
+    title: "Provision",
+    body: "OpenTofu brings up the VPC, subnets, security groups and three EC2 instances in eu-north-1.",
+  },
+  {
+    title: "Configure",
+    body: "Ansible inventories the instances from OpenTofu outputs and applies baseline roles on control and workers.",
+  },
+  {
+    title: "Serve",
+    body: "Go API (ansible-app) on port 8000 and this page on 8080, fronted by an nginx reverse proxy.",
+  },
+];
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="ansible_lab single page site" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{app}</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">aws-lab / ansible_lab</p>
+        <h1>{app}</h1>
+        <p class="lede">
+          A single-page site for the Ansible lab: OpenTofu provisions,
+          Ansible configures, and two small containers serve the result.
+        </p>
+      </header>
+
+      <section class="stack">
+        {stack.map((item) => (
+          <article>
+            <h2>{item.title}</h2>
+            <p>{item.body}</p>
+          </article>
+        ))}
+      </section>
+
+      <footer>
+        <p>
+          Sibling service: <code>ansible-app</code> exposes
+          <code>GET /</code>, <code>GET /health</code>, <code>GET /ready</code>
+          and <code>GET /car</code> on port 8000.
+        </p>
+        <p class="fine">© {year} · built with Astro</p>
+      </footer>
+    </main>
+  </body>
+</html>
+
+<style>
+  :global(html) {
+    color-scheme: dark;
+  }
+
+  :global(body) {
+    margin: 0;
+    min-height: 100vh;
+    background: #101418;
+    color: #e6e9ec;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+      sans-serif;
+    line-height: 1.6;
+    display: grid;
+    place-items: center;
+    padding: 3rem 1.5rem;
+    box-sizing: border-box;
+  }
+
+  main {
+    width: 100%;
+    max-width: 44rem;
+  }
+
+  .eyebrow {
+    margin: 0 0 0.75rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #7c8794;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(2.2rem, 6vw, 3.2rem);
+    letter-spacing: -0.02em;
+    color: #fff;
+  }
+
+  .lede {
+    margin: 1rem 0 0;
+    color: #aab3bd;
+  }
+
+  .stack {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    margin: 2.5rem 0;
+  }
+
+  article {
+    background: #181e25;
+    border: 1px solid #242c35;
+    border-radius: 0.75rem;
+    padding: 1.25rem 1.25rem 1rem;
+  }
+
+  article h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+    color: #6cb2ff;
+  }
+
+  article p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #aab3bd;
+  }
+
+  footer {
+    border-top: 1px solid #242c35;
+    padding-top: 1.25rem;
+    color: #7c8794;
+    font-size: 0.85rem;
+  }
+
+  footer p {
+    margin: 0 0 0.5rem;
+  }
+
+  .fine {
+    color: #566069;
+  }
+
+  code {
+    background: #1e252d;
+    border-radius: 0.3rem;
+    padding: 0.1rem 0.35rem;
+    font-size: 0.85em;
+  }
+</style>
