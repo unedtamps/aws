@@ -1,0 +1,16 @@
+- name: Pull ansible-app image
+  community.docker.docker_image:
+    name: "{{ ansible_app_image }}"
+    source: pull
+- name: Run ansible-app container
+  community.docker.docker_container:
+    name: "{{ ansible_app_name }}"
+    image: "{{ ansible_app_image }}"
+    state: started
+    restart_policy: "{{ ansible_app_restart_policy }}"
+    published_ports:
+      - "{{ ansible_app_port }}:{{ ansible_app_port }}"
+    env:
+      DB_STRING: "{{ ansible_app_db_string }}"
+      PORT: "{{ ansible_app_port }}"
+  no_log: true

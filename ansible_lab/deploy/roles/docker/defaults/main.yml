@@ -1,0 +1,5 @@
+---
+# defaults file for docker
+#
+# User that gets added to the docker group (effective after re-login/SSH session).
+docker_user: ubuntu

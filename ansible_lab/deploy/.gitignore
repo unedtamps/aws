@@ -1,1 +1,3 @@
 ansible-key
+.retry/
+vault_password_file

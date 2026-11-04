@@ -1,0 +1,6 @@
+---
+# defaults file for common
+#
+common_packages:
+  - git
+  - curl
