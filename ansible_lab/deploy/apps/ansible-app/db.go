@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	pingTimeout    = 2 * time.Second
+	pingTimeout    = 10 * time.Second
 	dbWaitAttempts = 30
 	dbWaitDelay    = 2 * time.Second
 )
