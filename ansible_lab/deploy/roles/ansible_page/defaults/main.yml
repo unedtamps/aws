@@ -1,0 +1,12 @@
+---
+# defaults file for ansible_page
+#
+# Static Astro site container (unedotamps/ansible-page). The image listens
+# on 8080 internally, but ansible-sg only allows 8000-8020 inbound from
+# http-sg (the control node), so the host port is remapped to 8010.
+# reverse_proxy_page_port must match ansible_page_host_port.
+ansible_page_image: unedotamps/ansible-page:latest
+ansible_page_name: ansible-page
+ansible_page_container_port: 8080
+ansible_page_host_port: 8010
+ansible_page_restart_policy: unless-stopped

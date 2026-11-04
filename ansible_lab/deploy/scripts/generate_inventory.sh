@@ -3,7 +3,11 @@
 # generate_inventory.sh
 #
 # Generate an Ansible YAML inventory (deploy/inventory/hosts.yaml) from the
-# OpenTofu output of the provision/ stack.
+# OpenTofu outputs of the provision/ stack:
+#
+#   ips         -> ansible_host (public EIP, used for SSH)
+#   private_ips -> private_ip   (used by nginx upstreams; SG rules only
+#                                match private-IP traffic inside the VPC)
 #
 # Mapping:
 #   ec2-ans-0  -> control group
@@ -17,7 +21,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 PROVISION_DIR="${ROOT_DIR}/provision"
-INVENTORY_FILE="${ROOT_DIR}/deploy/inventory/hosts.yaml"
+INVENTORY_FILE="${INVENTORY_FILE:-${ROOT_DIR}/deploy/inventory/hosts.yaml}"
 CONTROL_HOST="ec2-ans-0"
 
 if ! command -v tofu >/dev/null 2>&1; then
@@ -29,36 +33,59 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Reading 'ips' output from ${PROVISION_DIR} ..."
+echo "Reading 'ips' and 'private_ips' outputs from ${PROVISION_DIR} ..."
 IPS_JSON="$(tofu -chdir="${PROVISION_DIR}" output -json ips)"
+if ! PRIVATE_IPS_JSON="$(tofu -chdir="${PROVISION_DIR}" output -json private_ips 2>/dev/null)"; then
+  echo "error: tofu output 'private_ips' not found." >&2
+  echo "       Apply the provision/ stack first (tofu apply) so the new output exists, then re-run this script." >&2
+  exit 1
+fi
 
 TMP_FILE="$(mktemp)"
 trap 'rm -f "${TMP_FILE}"' EXIT
 
-CONTROL_HOST="${CONTROL_HOST}" IPS_JSON="${IPS_JSON}" python3 - > "${TMP_FILE}" <<'PY'
+CONTROL_HOST="${CONTROL_HOST}" \
+  IPS_JSON="${IPS_JSON}" \
+  PRIVATE_IPS_JSON="${PRIVATE_IPS_JSON}" \
+  python3 - > "${TMP_FILE}" <<'PY'
 import json
 import os
 import sys
 
 control = os.environ["CONTROL_HOST"]
 ips = json.loads(os.environ["IPS_JSON"])
+private_ips = json.loads(os.environ["PRIVATE_IPS_JSON"])
 
 if not isinstance(ips, dict) or not ips:
     sys.exit("error: tofu output 'ips' is empty or not an object")
+if not isinstance(private_ips, dict) or not private_ips:
+    sys.exit("error: tofu output 'private_ips' is empty or not an object")
 
 if control not in ips:
     sys.exit(f"error: control host '{control}' not found in tofu output keys: {sorted(ips)}")
+if set(ips) != set(private_ips):
+    sys.exit(
+        "error: 'ips' and 'private_ips' disagree on hosts: "
+        f"public-only={sorted(set(ips) - set(private_ips))}, "
+        f"private-only={sorted(set(private_ips) - set(ips))}"
+    )
 
 workers = sorted(name for name in ips if name != control)
 
+
+def emit(name):
+    return [
+        f"        {name}:",
+        f"          ansible_host: {ips[name]}",
+        f"          private_ip: {private_ips[name]}",
+    ]
+
+
 lines = ["all:", "  children:", "    control:", "      hosts:"]
-lines.append(f"        {control}:")
-lines.append(f"          ansible_host: {ips[control]}")
-lines.append("    workers:")
-lines.append("      hosts:")
+lines += emit(control)
+lines += ["    workers:", "      hosts:"]
 for name in workers:
-    lines.append(f"        {name}:")
-    lines.append(f"          ansible_host: {ips[name]}")
+    lines += emit(name)
 
 print("\n".join(lines))
 PY

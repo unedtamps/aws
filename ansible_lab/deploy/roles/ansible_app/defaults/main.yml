@@ -5,7 +5,7 @@
 # reverse_proxy role builds its upstream from reverse_proxy_app_port.
 ansible_app_image: unedotamps/ansible-app:latest
 ansible_app_name: ansible-app
-ansible_app_port: "8000"
+ansible_app_port: 8000
 ansible_app_restart_policy: unless-stopped
 # db_string is the plain alias defined in group_vars/workers/workers.yml;
 # the actual secret lives in inventory/group_vars/workers/vault.yml as

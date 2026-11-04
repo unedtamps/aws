@@ -1,0 +1,14 @@
+---
+- name: Pull ansible-page image
+  community.docker.docker_image:
+    name: "{{ ansible_page_image }}"
+    source: pull
+
+- name: Run ansible-page container
+  community.docker.docker_container:
+    name: "{{ ansible_page_name }}"
+    image: "{{ ansible_page_image }}"
+    state: started
+    restart_policy: "{{ ansible_page_restart_policy }}"
+    published_ports:
+      - "{{ ansible_page_host_port }}:{{ ansible_page_container_port }}"

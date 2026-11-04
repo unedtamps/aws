@@ -7,13 +7,13 @@
 
 upstream ansible_app {
 {% for host in groups['workers'] %}
-    server {{ hostvars[host]['ansible_host'] }}:{{ reverse_proxy_app_port }};
+    server {{ hostvars[host]['private_ip'] | default(hostvars[host]['ansible_host']) }}:{{ reverse_proxy_app_port }};
 {% endfor %}
 }
 
-upstream ansiible_page {
+upstream ansible_page {
 {% for host in groups['workers'] %}
-    server {{ hostvars[host]['ansible_host'] }}:{{ reverse_proxy_page_port }};
+    server {{ hostvars[host]['private_ip'] | default(hostvars[host]['ansible_host']) }}:{{ reverse_proxy_page_port }};
 {% endfor %}
 }
 
@@ -36,7 +36,7 @@ server {
     }
 }
 
-# static site vhost (ansiible-page)
+# static site vhost (ansible-page)
 server {
     listen 80;
     listen [::]:80;
@@ -51,7 +51,7 @@ server {
     proxy_connect_timeout 2s;
 
     location / {
-        proxy_pass http://ansiible_page;
+        proxy_pass http://ansible_page;
     }
 }
 

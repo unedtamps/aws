@@ -12,5 +12,5 @@
       - "{{ ansible_app_port }}:{{ ansible_app_port }}"
     env:
       DB_STRING: "{{ ansible_app_db_string }}"
-      PORT: "{{ ansible_app_port }}"
+      PORT: "{{ ansible_app_port | string }}"
   no_log: true

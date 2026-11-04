@@ -4,9 +4,12 @@ all:
       hosts:
         ec2-ans-0:
           ansible_host: 16.192.7.47
+          private_ip: 10.0.2.9
     workers:
       hosts:
         ec2-ans-1:
           ansible_host: 13.61.199.178
+          private_ip: 10.0.2.4
         ec2-ans-2:
           ansible_host: 13.62.217.71
+          private_ip: 10.0.2.5
