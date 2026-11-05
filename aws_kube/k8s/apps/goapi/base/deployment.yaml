@@ -1,12 +1,12 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: api-app
+  name: goapi-app
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: api-app
+      app.kubernetes.io/name: goapi-app
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -15,11 +15,11 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: api-app
+        app.kubernetes.io/name: goapi-app
     spec:
       containers:
-        - name: api-app
-          image: unedotamps/api-app:latest
+        - name: goapi-app
+          image: unedotamps/goapi-app:latest
           env:
             - name: APP_NAME
               valueFrom:
@@ -28,7 +28,7 @@ spec:
             - name: USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: api-app-credentials
+                  name: goapi-app-credentials
                   key: username
             - name: DB_HOST
               value: postgres

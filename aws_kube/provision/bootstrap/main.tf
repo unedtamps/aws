@@ -18,7 +18,9 @@ provider "aws" {
 variable "aws_region" {
   type        = string
   description = "AWS region for the state bucket."
-  default     = "eu-north-1"
+  # The state bucket already lives in eu-north-1. The lab resources moved to
+  # ap-southeast-1, but the backend bucket does not need to move with them.
+  default = "eu-north-1"
 }
 
 variable "state_bucket_name" {

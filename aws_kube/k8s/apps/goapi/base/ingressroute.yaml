@@ -9,5 +9,5 @@ spec:
     - match: Host(`traefik.lensboxd.site`)
       kind: Rule
       services:
-        - name: api-service
+        - name: goapi-service
           port: 80

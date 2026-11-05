@@ -1,19 +1,19 @@
-
 targetGroup:
-  arn: "arn:aws:elasticloadbalancing:eu-north-1:246830848520:targetgroup/lab-eks-traefik-http/2cba9b52f2bcd034"
+  # Re-created by `tofu apply` in ap-southeast-1. Replace this ARN with
+  # `tofu output traefik_target_group_arn` after provisioning the new region.
+  arn: "arn:aws:elasticloadbalancing:ap-southeast-1:246830848520:targetgroup/lab-eks-traefik-http/e3fbef51ac6e9423"
   serviceName: traefik
   serviceNamespace: traefik
   servicePort: 80
-
 applications:
-  - name: api-dev
+  - name: goapi-dev
     namespace: argocd
     project: default
     repoURL: https://github.com/unedtamps/aws.git
     targetRevision: HEAD
-    path: aws_kube/k8s/apps/overlays/dev
+    path: aws_kube/k8s/apps/goapi/overlays/dev
     destinationServer: https://kubernetes.default.svc
-    destinationNamespace: dev
+    destinationNamespace: goapi-dev
     selfHeal: true
     prune: true
     createNamespace: true

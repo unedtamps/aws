@@ -25,7 +25,8 @@ aws-ebs-csi-driver:
 
 aws-load-balancer-controller:
   clusterName: lab-eks
-  region: eu-north-1
+  region: ap-southeast-1
+  # Replace with `tofu output vpc_id` after re-provisioning in ap-southeast-1.
   vpcId: vpc-04b8aac84a36b4d0e
   fullnameOverride: aws-load-balancer-controller
 
@@ -73,7 +74,7 @@ traefik:
     kubernetesCRD:
       enabled: true
       namespaces:
-        - dev
+        - goapi-dev
         - prod
     kubernetesIngress:
       enabled: false

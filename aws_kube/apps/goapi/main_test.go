@@ -161,7 +161,7 @@ func TestRootEndpointShowsUsername(t *testing.T) {
 }
 
 func TestHelloEndpointUsesAppName(t *testing.T) {
-	t.Setenv("APP_NAME", "api-dev")
+	t.Setenv("APP_NAME", "goapi-dev")
 
 	request := httptest.NewRequest(http.MethodGet, "/hello", nil)
 	recorder := httptest.NewRecorder()
@@ -177,12 +177,12 @@ func TestHelloEndpointUsesAppName(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 
-	if got.Message != "hello world from api-dev" {
-		t.Fatalf("message = %q, want %q", got.Message, "hello world from api-dev")
+	if got.Message != "hello world from goapi-dev" {
+		t.Fatalf("message = %q, want %q", got.Message, "hello world from goapi-dev")
 	}
 
-	if got.Service != "api-dev" {
-		t.Fatalf("service = %q, want %q", got.Service, "api-dev")
+	if got.Service != "goapi-dev" {
+		t.Fatalf("service = %q, want %q", got.Service, "goapi-dev")
 	}
 }
 

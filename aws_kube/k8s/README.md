@@ -14,7 +14,10 @@ k8s/
 |-- platform/
 |   |-- core/     Helm chart: controller platform (LBC, ESO, Argo CD, Traefik)
 |   `-- apps/     Helm chart: Argo CD Application + TargetGroupBinding
-`-- apps/         Kustomize: manifest aplikasi (base + overlays/dev)
+`-- apps/         Kustomize: manifest aplikasi
+    `-- goapi/
+        |-- base/         Deployment, Service, IngressRoute, Secret, Postgres
+        `-- overlays/dev/ Namespace, image tag, replica count
 ```
 
 Dua chart terpisah, bukan satu. Alasannya ada di bagian
@@ -36,9 +39,9 @@ flowchart LR
             svcTraefik -. "selects and resolves targetPort" .-> podsTraefik["3x Traefik Pod<br/>:8000"]
         end
 
-        subgraph devNs["namespace: dev"]
-            route["IngressRoute<br/>Host rule"] --> svcApi["Service api-service<br/>ClusterIP :80"]
-            svcApi --> podsApi["3x api-app Pod<br/>:8080"]
+        subgraph devNs["namespace: goapi-dev"]
+            route["IngressRoute<br/>Host rule"] --> svcApi["Service goapi-service<br/>ClusterIP :80"]
+            svcApi --> podsApi["3x goapi-app Pod<br/>:8080"]
         end
 
         podsTraefik --> route
@@ -130,7 +133,7 @@ Resource yang bergantung pada chart `core` sudah terpasang:
 
 | Resource | Fungsi |
 |---|---|
-| `Application/api-dev` | Memberi tahu Argo CD untuk sync `apps/overlays/dev` |
+| `Application/goapi-dev` | Memberi tahu Argo CD untuk sync `apps/goapi/overlays/dev` |
 | `TargetGroupBinding/traefik` | Mendaftarkan Pod Traefik ke NLB Target Group |
 
 ```bash
@@ -203,7 +206,7 @@ kubectl delete namespace argocd traefik external-secrets
 | `argocd` | Manual | Argo CD control plane dan resource `Application` |
 | `traefik` | Manual | Traefik |
 | `external-secrets` | Manual | External Secrets Operator |
-| `dev` | Argo CD (`CreateNamespace=true`) | Workload aplikasi development |
+| `goapi-dev` | Argo CD (`CreateNamespace=true`) | Workload aplikasi development |
 | `prod` | Belum ada | Ruang workload production |
 
 ## AWS Load Balancer Controller
@@ -219,10 +222,13 @@ Konfigurasi di `platform/core/values.yaml`:
 ```yaml
 aws-load-balancer-controller:
   clusterName: lab-eks
-  region: eu-north-1
+  region: ap-southeast-1
   vpcId: vpc-04b8aac84a36b4d0e
   fullnameOverride: aws-load-balancer-controller
 ```
+
+Nilai `vpcId` harus disalin dari `tofu output vpc_id` setiap kali VPC dibuat
+ulang, misalnya setelah pindah region.
 
 Chart LBC tidak menyediakan `namespaceOverride`, jadi resource-nya selalu ikut
 release namespace (`kube-system`).
@@ -254,11 +260,11 @@ flowchart LR
             eso["External Secrets Operator"]
         end
 
-        subgraph devNs["namespace: dev"]
+        subgraph devNs["namespace: goapi-dev"]
             store["SecretStore<br/>aws-secretsmanager"]
-            externalSecret["ExternalSecret<br/>api-app-credentials"]
-            k8sSecret["Kubernetes Secret<br/>api-app-credentials"]
-            api["api-app Pod<br/>USERNAME environment variable"]
+            externalSecret["ExternalSecret<br/>goapi-app-credentials"]
+            k8sSecret["Kubernetes Secret<br/>goapi-app-credentials"]
+            api["goapi-app Pod<br/>USERNAME environment variable"]
         end
     end
 
@@ -271,8 +277,8 @@ flowchart LR
     k8sSecret -->|"secretKeyRef"| api
 ```
 
-Manifest `SecretStore` dan `ExternalSecret` berada di `apps/base/secret.yaml`
-dan dirender oleh overlay `apps/overlays/dev`. Provider AWS tidak memiliki blok
+Manifest `SecretStore` dan `ExternalSecret` berada di `apps/goapi/base/secret.yaml`
+dan dirender oleh overlay `apps/goapi/overlays/dev`. Provider AWS tidak memiliki blok
 `auth` karena controller memakai EKS Pod Identity.
 
 ### Nilai Secret
@@ -289,7 +295,7 @@ Wadah secret dibuat OpenTofu. **Nilai** diisi di luar Terraform dan Git:
 aws secretsmanager put-secret-value \
   --secret-id lab-eks/external-secrets/app-1 \
   --secret-string '{"username":"test-user"}' \
-  --region eu-north-1
+  --region ap-southeast-1
 ```
 
 `put-secret-value` menimpa seluruh isi secret, bukan menambahkan key. Untuk
@@ -301,11 +307,11 @@ SECRET_ID="lab-eks/external-secrets/app-1"
 read -rsp "Password baru: " NEW_PASSWORD; echo
 
 aws secretsmanager get-secret-value \
-  --secret-id "$SECRET_ID" --region eu-north-1 \
+  --secret-id "$SECRET_ID" --region ap-southeast-1 \
   --query SecretString --output text \
 | jq --arg v "$NEW_PASSWORD" '. + {password: $v}' \
 | aws secretsmanager put-secret-value \
-    --secret-id "$SECRET_ID" --region eu-north-1 \
+    --secret-id "$SECRET_ID" --region ap-southeast-1 \
     --secret-string file:///dev/stdin
 
 unset NEW_PASSWORD
@@ -331,7 +337,7 @@ secret, ubah `resources` menjadi prefix wildcard:
 
 ```hcl
 resources = [
-  "arn:aws:secretsmanager:eu-north-1:246830848520:secret:${var.cluster_name}/external-secrets/*"
+  "arn:aws:secretsmanager:ap-southeast-1:246830848520:secret:${var.cluster_name}/external-secrets/*"
 ]
 ```
 
@@ -353,11 +359,11 @@ harus mendeklarasikan key tersebut, lalu Argo CD di-force refresh:
 ```
 
 ```bash
-kubectl annotate application api-dev -n argocd \
+kubectl annotate application goapi-dev -n argocd \
   argocd.argoproj.io/refresh=hard --overwrite
 ```
 
-Aplikasi `api-app` membaca `USERNAME` dan kredensial database dari Secret
+Aplikasi `goapi-app` membaca `USERNAME` dan kredensial database dari Secret
 `postgres-credentials`. Key baru tidak dipakai sampai `main.go` dan
 `deployment.yaml` diubah.
 
@@ -510,11 +516,11 @@ AZ pasti cocok.
 tetap Ditagih. Harus dihapus manual:
 
 ```bash
-aws ec2 describe-volumes --region eu-north-1 \
+aws ec2 describe-volumes --region ap-southeast-1 \
   --filters Name=status,Values=available \
   --query 'Volumes[].VolumeId'
 
-aws ec2 delete-volume --region eu-north-1 --volume-id vol-xxxxxxxxxxxxxxxxx
+aws ec2 delete-volume --region ap-southeast-1 --volume-id vol-xxxxxxxxxxxxxxxxx
 ```
 
 ### PV dan PVC
@@ -613,14 +619,14 @@ kubectl -n kube-system get pod -l app=ebs-csi-controller
 kubectl -n kube-system get pod -l app=ebs-csi-node
 
 kubectl get pv
-kubectl -n dev get pvc
-kubectl -n dev get statefulset,service
+kubectl -n goapi-dev get pvc
+kubectl -n goapi-dev get statefulset,service
 ```
 
 Volume hasil provisioning bisa seen langsung dari AWS:
 
 ```bash
-aws ec2 describe-volumes --region eu-north-1 \
+aws ec2 describe-volumes --region ap-southeast-1 \
   --filters Name=tag-key,Values=ebs.csi.aws.com/cluster-name \
   --query 'Volumes[].{Id:VolumeId,GiB:Size,State:State,AZ:AvailabilityZone}' \
   --output table
@@ -651,11 +657,11 @@ terbaru dari Git dan menyinkronkan otomatis.
 flowchart LR
     developer["Developer"] --> master["GitHub master"]
     master --> ci["GitHub Actions"]
-    ci --> registry["Docker Hub<br/>unedotamps/api-app<br/>sha-&lt;commit&gt;"]
+    ci --> registry["Docker Hub<br/>unedotamps/goapi-app<br/>sha-&lt;commit&gt;"]
     ci --> pr["Image update PR"]
     pr -->|"Human merge"| gitops["Kustomize overlay dev"]
     gitops -->|"Poll sekitar 3 menit"| argocd["Argo CD"]
-    argocd -->|"Automated sync"| dev["namespace dev"]
+    argocd -->|"Automated sync"| dev["namespace goapi-dev"]
     registry --> dev
 ```
 
@@ -665,7 +671,7 @@ menjadi desired state, Argo CD menerapkannya ke EKS.
 Chart dipasang sebagai subchart di `platform/core` dengan versi `10.10.0`
 (Argo CD `v3.5.4`).
 
-### Resource `api-dev`
+### Resource `goapi-dev`
 
 Resource `Application` dikelola chart `platform/apps`, bukan file terpisah:
 
@@ -678,25 +684,25 @@ Konfigurasi utamanya di `platform/apps/values.yaml`:
 
 | Field | Nilai | Fungsi |
 |---|---|---|
-| `name` | `api-dev` | Nama resource `Application` |
+| `name` | `goapi-dev` | Nama resource `Application` |
 | `namespace` | `argocd` | Lokasi resource di cluster |
 | `repoURL` | `https://github.com/unedtamps/aws.git` | Repository desired state |
 | `targetRevision` | `HEAD` | Default branch repository |
-| `path` | `aws_kube/k8s/apps/overlays/dev` | Overlay Kustomize yang dirender |
+| `path` | `aws_kube/k8s/apps/goapi/overlays/dev` | Overlay Kustomize yang dirender |
 | `destinationServer` | `https://kubernetes.default.svc` | Cluster yang sama dengan Argo CD |
-| `destinationNamespace` | `dev` | Namespace target workload |
+| `destinationNamespace` | `goapi-dev` | Namespace target workload |
 
 Menambah environment berikutnya cukup menambah entri di list `applications`,
 tanpa menyentuh template:
 
 ```yaml
 applications:
-  - name: api-prod
+  - name: goapi-prod
     namespace: argocd
     project: default
     repoURL: https://github.com/unedtamps/aws.git
     targetRevision: HEAD
-    path: aws_kube/k8s/apps/overlays/prod
+    path: aws_kube/k8s/apps/goapi/overlays/prod
     destinationServer: https://kubernetes.default.svc
     destinationNamespace: prod
     selfHeal: true
@@ -711,7 +717,7 @@ applications:
 
 ### Sync Policy
 
-`api-dev` menggunakan automated sync:
+`goapi-dev` menggunakan automated sync:
 
 | Opsi | Perilaku |
 |---|---|
@@ -723,7 +729,7 @@ applications:
 | `manifestGeneratePaths` | Membatasi path yang dipantau saat render (optimasi) |
 
 `manifestGeneratePaths: ".;../../base"` mendaftarkan path yang dipakai saat
-merender overlay — `overlays/dev` dan `apps/base`. Annotation ini hanya
+merender overlay — `goapi/overlays/dev` dan `apps/goapi/base`. Annotation ini hanya
 optimasi: tanpa itu, perubahan commit apa pun tetap memicu re-render. Kalau
 dipakai, **setiap path yang ikut render harus terdaftar**, karena path yang
 terlewat akan membuat perubahannya diabaikan tanpa error.
@@ -777,7 +783,7 @@ gagal dengan `invalid ownership metadata`.
 |---|---|
 | Replica | 3 |
 | Provider | Kubernetes CRD |
-| Watched namespaces | `dev`, `prod` |
+| Watched namespaces | `goapi-dev`, `prod` |
 | EntryPoint | `api` pada TCP port `8000` |
 | Service | `traefik:80` ke named target port `api` (`8000`) |
 | Health endpoint | `/ping` |
@@ -822,27 +828,27 @@ tofu -chdir=aws_kube/provision output -raw traefik_target_group_arn
 Nilai saat ini:
 
 ```text
-arn:aws:elasticloadbalancing:eu-north-1:246830848520:targetgroup/lab-eks-traefik-http/2cba9b52f2bcd034
+arn:aws:elasticloadbalancing:ap-southeast-1:246830848520:targetgroup/lab-eks-traefik-http/2cba9b52f2bcd034
 ```
 
 Kalau Terraform me-recreate Target Group, ARN berubah dan binding tidak akan
-konek tanpa error. Perbarui `platform/apps/values.yaml`, lalu `make -C apps
-upgrade`.
+konek tanpa error. Perbarui `platform/apps/values.yaml`, lalu
+`make -C platform/apps upgrade`.
 
 ## Aplikasi Development
 
 Base aplikasi mendefinisikan Deployment, ClusterIP Service, StatefulSet
 PostgreSQL, Traefik `IngressRoute`, dan `SecretStore`/`ExternalSecret`. Overlay
-`apps/overlays/dev` menempatkan resource ke namespace `dev` dan menaikkan
+`apps/goapi/overlays/dev` menempatkan resource ke namespace `goapi-dev` dan menaikkan
 replica Deployment menjadi tiga.
 
 | Komponen | Konfigurasi |
 |---|---|
-| Deployment | `api-app` |
-| Image | `unedotamps/api-app:<sha-commit>` |
+| Deployment | `goapi-app` |
+| Image | `unedotamps/goapi-app:<sha-commit>` |
 | Replica dev | 3 |
 | Container port | `8080` |
-| Service | `api-service:80` ke `8080` |
+| Service | `goapi-service:80` ke `8080` |
 | Liveness probe | `GET /healthz` pada `8080`, tanpa cek database |
 | Readiness probe | `GET /readyz` pada `8080`, memverifikasi koneksi database |
 | StatefulSet | `postgres`, `postgres:16-alpine`, 1 replica |
@@ -851,7 +857,7 @@ replica Deployment menjadi tiga.
 | Route | ``Host(`traefik.lensboxd.site`)`` |
 | EntryPoint | `api` |
 
-Source image contoh berada di [`../apps/api`](../apps/api).
+Source image contoh berada di [`../apps/goapi`](../apps/goapi).
 
 ### Pembagian Liveness dan Readiness
 
@@ -990,7 +996,7 @@ Semua perintah dijalankan dari root repository.
 ### 1. Hubungkan `kubectl`
 
 ```bash
-aws eks update-kubeconfig --region eu-north-1 --name lab-eks
+aws eks update-kubeconfig --region ap-southeast-1 --name lab-eks
 kubectl cluster-info
 ```
 
@@ -1061,7 +1067,7 @@ make helm-status
 
 ```bash
 kubectl get applications.argoproj.io -n argocd --output wide
-kubectl describe application api-dev -n argocd
+kubectl describe application goapi-dev -n argocd
 ```
 
 | Status | Arti |
@@ -1076,24 +1082,24 @@ kubectl describe application api-dev -n argocd
 Untuk sync ulang tanpa menunggu polling:
 
 ```bash
-kubectl annotate application api-dev -n argocd \
+kubectl annotate application goapi-dev -n argocd \
   argocd.argoproj.io/refresh=hard --overwrite
 ```
 
 ### Status Workload
 
 ```bash
-kubectl -n dev get pod,service,ingressroute,statefulset,pvc
-kubectl -n dev describe deployment api-app
-kubectl -n dev describe statefulset postgres
-kubectl -n dev get events --sort-by=.lastTimestamp
+kubectl -n goapi-dev get pod,service,ingressroute,statefulset,pvc
+kubectl -n goapi-dev describe deployment goapi-app
+kubectl -n goapi-dev describe statefulset postgres
+kubectl -n goapi-dev get events --sort-by=.lastTimestamp
 ```
 
 Pod `CreateContainerConfigError` hampir selalu berarti Secret yang dirujuk
 `secretKeyRef` belum ada. Periksa `ExternalSecret`-nya lebih dulu.
 
 Pod yang `Running` tetapi `READY 0/1` berarti readiness probe gagal. Untuk
-`api-app` itu artinya `/readyz` belum bisa ping database; cek log Pod dan
+`goapi-app` itu artinya `/readyz` belum bisa ping database; cek log Pod dan
 status StatefulSet `postgres`.
 
 PVC yang `Pending` padahal Pod sudah ada biasanya berarti StorageClass atau
@@ -1107,7 +1113,7 @@ TARGET_GROUP_ARN="$(tofu -chdir=aws_kube/provision \
   output -raw traefik_target_group_arn)"
 
 aws elbv2 describe-target-health \
-  --region eu-north-1 \
+  --region ap-southeast-1 \
   --target-group-arn "${TARGET_GROUP_ARN}"
 ```
 
@@ -1129,7 +1135,7 @@ Jika request gagal, periksa berurutan:
 4. `TargetGroupBinding` tidak memiliki error reconciliation.
 5. Target Group menampilkan Pod IP port `8000` sebagai `healthy`.
 6. Host pada request sama dengan rule pada `IngressRoute`.
-7. Pod `api-app` dan Service `api-service` memiliki endpoint.
+7. Pod `goapi-app` dan Service `goapi-service` memiliki endpoint.
 
 ## Update dan Rollback
 
@@ -1143,7 +1149,7 @@ make -C aws_kube/k8s/platform/apps render
 Render aplikasi yang dikelola Argo CD:
 
 ```bash
-kubectl kustomize aws_kube/k8s/apps/overlays/dev
+kubectl kustomize aws_kube/k8s/apps/goapi/overlays/dev
 ```
 
 Upgrade platform:
@@ -1157,7 +1163,7 @@ Rollback aplikasi dilakukan melalui Git. Revert commit manifest atau image tag,
 lalu merge melalui alur review normal:
 
 ```bash
-git log --oneline -- aws_kube/k8s/apps/overlays/dev/kustomization.yaml
+git log --oneline -- aws_kube/k8s/apps/goapi/overlays/dev/kustomization.yaml
 git revert <commit-sha>
 ```
 
@@ -1215,13 +1221,13 @@ Pastikan target Pod sudah tidak terdaftar sebelum menghancurkan NLB atau EKS.
   ditagih; bersihkan manual secara berkala:
 
   ```bash
-  aws ec2 describe-volumes --region eu-north-1 \
+  aws ec2 describe-volumes --region ap-southeast-1 \
     --filters Name=status,Values=available \
     --query 'Volumes[].VolumeId'
   ```
 
-- Deployment `api-app` belum memiliki resource request/limit, PDB, maupun HPA.
-  `api-app` dan `postgres` bisa saling berebut memori pada node `t3.small`
+- Deployment `goapi-app` belum memiliki resource request/limit, PDB, maupun HPA.
+  `goapi-app` dan `postgres` bisa saling berebut memori pada node `t3.small`
   yang hanya punya 2048 MiB.
 - PostgreSQL berjalan 1 replica tanpa backup dan tanpa high availability.
   Menambah replica tidak menggantikan backup.

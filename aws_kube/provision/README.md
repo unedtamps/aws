@@ -15,7 +15,7 @@ flowchart TB
     client["Internet Client"] --> dns["Cloudflare DNS<br/>traefik.lensboxd.site"]
     dns --> nlb
 
-    subgraph aws["AWS Account - eu-north-1"]
+    subgraph aws["AWS Account - ap-southeast-1"]
         acm["AWS Certificate Manager<br/>TLS Certificate"] --> nlb
         state["S3 Remote State<br/>Versioning + Encryption + Lockfile"]
 
@@ -23,16 +23,16 @@ flowchart TB
             igw["Internet Gateway"] --> nlb
 
             subgraph public["Public Subnets"]
-                pubA["eu-north-1a<br/>10.20.32.0/20"]
-                pubB["eu-north-1b<br/>10.20.48.0/20"]
+                pubA["ap-southeast-1a<br/>10.20.32.0/20"]
+                pubB["ap-southeast-1b<br/>10.20.48.0/20"]
                 nlb["Network Load Balancer<br/>2 Elastic IPs<br/>TLS :443"]
             end
 
             nat["Regional NAT Gateway<br/>VPC-scoped"]
 
             subgraph private["Private Subnets"]
-                priA["eu-north-1a<br/>10.20.0.0/20"]
-                priB["eu-north-1b<br/>10.20.16.0/20"]
+                priA["ap-southeast-1a<br/>10.20.0.0/20"]
+                priB["ap-southeast-1b<br/>10.20.16.0/20"]
                 nodes["EKS Managed Node Group<br/>2-4 x t3.small"]
                 pods["Traefik and Application Pods"]
             end
@@ -129,10 +129,10 @@ lockfile. Jika nama bucket atau state key bootstrap diubah, perbarui juga
 
 | Network | Availability Zone | CIDR | Fungsi |
 |---|---|---|---|
-| Private subnet A | `eu-north-1a` | `10.20.0.0/20` | EKS node dan Pod |
-| Private subnet B | `eu-north-1b` | `10.20.16.0/20` | EKS node dan Pod |
-| Public subnet A | `eu-north-1a` | `10.20.32.0/20` | NLB, EIP, dan jalur internet |
-| Public subnet B | `eu-north-1b` | `10.20.48.0/20` | NLB, EIP, dan jalur internet |
+| Private subnet A | `ap-southeast-1a` | `10.20.0.0/20` | EKS node dan Pod |
+| Private subnet B | `ap-southeast-1b` | `10.20.16.0/20` | EKS node dan Pod |
+| Public subnet A | `ap-southeast-1a` | `10.20.32.0/20` | NLB, EIP, dan jalur internet |
+| Public subnet B | `ap-southeast-1b` | `10.20.48.0/20` | NLB, EIP, dan jalur internet |
 
 VPC menggunakan CIDR `10.20.0.0/16`. Kedua private subnet memakai satu
 regional NAT Gateway untuk akses keluar. Subnet juga memiliki tag discovery
@@ -267,7 +267,7 @@ Output penting:
 
 ```bash
 AWS_PROFILE=dev aws eks update-kubeconfig \
-  --region eu-north-1 \
+  --region ap-southeast-1 \
   --name lab-eks
 
 kubectl get nodes
@@ -282,11 +282,11 @@ make state-list AWS_PROFILE=dev
 make output AWS_PROFILE=dev
 
 AWS_PROFILE=dev aws eks describe-cluster \
-  --region eu-north-1 \
+  --region ap-southeast-1 \
   --name lab-eks
 
 AWS_PROFILE=dev aws elbv2 describe-target-health \
-  --region eu-north-1 \
+  --region ap-southeast-1 \
   --target-group-arn "$(tofu output -raw traefik_target_group_arn)"
 ```
 
@@ -313,7 +313,8 @@ Konfigurasi berikut masih terikat pada environment lab dan harus ditinjau saat
 melakukan deployment baru:
 
 - AWS account ID pada state bucket, IAM principal, dan Target Group ARN.
-- Region `eu-north-1` pada provider dan backend.
+- Region `ap-southeast-1` pada provider; remote state backend tetap di bucket
+  `eu-north-1`.
 - Domain `traefik.lensboxd.site` pada DNS dan Kubernetes `IngressRoute`.
 - Backend bucket dan object key.
 - VPC ID pada script instalasi AWS Load Balancer Controller.
@@ -323,3 +324,26 @@ melakukan deployment baru:
 
 Resource EKS, NAT Gateway, NLB, EC2 worker node, dan Elastic IP menimbulkan biaya
 selama aktif.
+
+## Pindah Region
+
+State masih menyimpan resource yang dibuat di region lama. Destroy dulu dengan
+konfigurasi lama sebelum apply ke region baru, supaya resource lama tidak
+tertinggal dan terus menagih biaya.
+
+1. Kembalikan sementara `provider.tf` dan AZ di `modules/networking/main.tf`
+   ke region lama (`eu-north-1`).
+2. Jalankan `make plan-destroy old` lalu
+   `make destroy old DESTROY_CONFIRM=yes`.
+3. Kembalikan `provider.tf` dan AZ ke region baru (`ap-southeast-1`).
+4. Jalankan `make plan dev`, tinjau hasilnya, lalu `make apply dev`.
+5. Setelah apply, perbarui nilai yang ikut berubah:
+
+```bash
+tofu output vpc_id
+tofu output traefik_target_group_arn
+```
+
+Salin hasilnya ke `k8s/platform/core/values.yaml` (`vpcId`) dan
+`k8s/platform/apps/values.yaml` (`targetGroup.arn`), lalu install ulang chart
+`core` dan `apps`.

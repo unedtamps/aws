@@ -1,4 +1,4 @@
 provider "aws" {
-  region = "eu-north-1"
+  region = "ap-southeast-1"
 }
 provider "cloudflare" {}
