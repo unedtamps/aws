@@ -5,7 +5,7 @@ resources:
 namespace: goapi-dev
 images:
   - name: unedotamps/goapi-app
-    newTag: sha-b2d1bb828aa33935d58c31125717ff2f05cf8b62
+    newTag: sha-5559912baf01e1a072eb96b665999e6f23dba3b1
 replicas:
   - name: goapi-app
     count: 3
