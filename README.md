@@ -40,7 +40,7 @@ flowchart LR
 .
 |-- aws_kube/
 |   |-- apps/
-|   |   `-- api/                  # Source code aplikasi contoh
+|   |   `-- goapi/                # Source code aplikasi contoh
 |   |-- k8s/                      # Manifest dan deployment Kubernetes
 |   `-- provision/                # Infrastruktur EKS dengan OpenTofu
 |-- ec2_lab/                      # Lab EC2 dan Application Load Balancer
@@ -55,7 +55,7 @@ Traefik, dan aplikasi contoh di dalam cluster.
 
 - [Dokumentasi provisioning AWS](aws_kube/provision/README.md)
 - [Dokumentasi platform Kubernetes](aws_kube/k8s/README.md)
-- Source aplikasi: [`aws_kube/apps/api`](aws_kube/apps/api)
+- Source aplikasi: [`aws_kube/apps/goapi`](aws_kube/apps/goapi)
 
 ### `ec2_lab`
 
@@ -98,12 +98,12 @@ infrastruktur, kemudian lanjutkan ke
 
 | Item | Nilai |
 |---|---|
-| AWS Region | `eu-north-1` |
+| AWS Region | `ap-southeast-1` |
 | EKS Cluster | `lab-eks` |
 | Kubernetes version | `1.36` |
 | VPC CIDR | `10.20.0.0/16` |
 | Public endpoint | `https://traefik.lensboxd.site` |
-| Deployment overlay dan namespace aplikasi | `dev` |
+| Deployment overlay dan namespace aplikasi | `goapi-dev` |
 
 Nilai di atas adalah konfigurasi environment lab saat ini. Beberapa nilai masih
 hard-coded, termasuk account ID, nama state bucket, IAM principal, domain, VPC

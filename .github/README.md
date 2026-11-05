@@ -1,8 +1,8 @@
 # GitHub Actions
 
-## API Development Pipeline
+## Go API Development Pipeline
 
-Workflow `workflows/api-dev-ci.yaml` berjalan ketika perubahan source API atau
+Workflow `workflows/goapi-dev-ci.yaml` berjalan ketika perubahan source aplikasi goapi atau
 workflow di-push ke branch `master`.
 
 ```text
@@ -19,16 +19,16 @@ push master
 Image dipublikasikan sebagai:
 
 ```text
-unedotamps/api-app:sha-<full-git-commit-sha>
+unedotamps/goapi-app:sha-<full-git-commit-sha>
 ```
 
 Workflow kemudian memperbarui `newTag` pada:
 
 ```text
-aws_kube/k8s/apps/overlays/dev/kustomization.yaml
+aws_kube/k8s/apps/goapi/overlays/dev/kustomization.yaml
 ```
 
-Pull Request memakai branch tetap `automation/dev-api-image`. Jika Pull Request
+Pull Request memakai branch tetap `automation/dev-goapi-image`. Jika Pull Request
 sebelumnya belum di-merge, build terbaru akan memperbarui branch dan Pull Request
 yang sama.
 
@@ -42,7 +42,7 @@ Tambahkan secrets berikut melalui repository settings GitHub:
 | `DOCKERHUB_TOKEN` | Docker Hub access token dengan permission push |
 
 Jangan gunakan password account Docker Hub sebagai secret pipeline.
-Repository `unedotamps/api-app` harus public agar EKS dapat menarik image tanpa
+Repository `unedotamps/goapi-app` harus public agar EKS dapat menarik image tanpa
 credential tambahan. Jika repository dibuat private, tambahkan `imagePullSecret`
 ke workload Kubernetes.
 

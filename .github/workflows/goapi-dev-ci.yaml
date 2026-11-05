@@ -1,26 +1,26 @@
-name: API CI and dev image update
+name: Go API CI and dev image update
 
 on:
   push:
     branches:
       - master
     paths:
-      - aws_kube/apps/api/**
-      - .github/workflows/api-dev-ci.yaml
+      - aws_kube/apps/goapi/**
+      - .github/workflows/goapi-dev-ci.yaml
 
 permissions:
   contents: write
   pull-requests: write
 
 concurrency:
-  group: api-dev-${{ github.ref }}
+  group: goapi-dev-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  APP_DIR: aws_kube/apps/api
-  IMAGE_NAME: unedotamps/api-app
+  APP_DIR: aws_kube/apps/goapi
+  IMAGE_NAME: unedotamps/goapi-app
   IMAGE_TAG: sha-${{ github.sha }}
-  DEV_KUSTOMIZATION: aws_kube/k8s/apps/overlays/dev/kustomization.yaml
+  DEV_KUSTOMIZATION: aws_kube/k8s/apps/goapi/overlays/dev/kustomization.yaml
 
 jobs:
   build-push-and-update:
@@ -72,11 +72,11 @@ jobs:
         with:
           token: ${{github.token}}
           base: master
-          branch: automation/dev-api-image
+          branch: automation/dev-goapi-image
           delete-branch: true
           add-paths: ${{ env.DEV_KUSTOMIZATION }}
-          commit-message: "ci(dev): deploy api ${{ env.IMAGE_TAG }}"
-          title: "ci(dev): deploy api ${{ env.IMAGE_TAG }}"
+          commit-message: "ci(dev): deploy goapi ${{ env.IMAGE_TAG }}"
+          title: "ci(dev): deploy goapi ${{ env.IMAGE_TAG }}"
           body: |
             Automated development image update.
 
@@ -84,4 +84,4 @@ jobs:
             - Image: `${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}`
             - Digest: `${{ steps.build.outputs.digest }}`
 
-            Merge this pull request to let Argo CD deploy the image to `dev`.
+            Merge this pull request to let Argo CD deploy the image to `goapi-dev`.
