@@ -3,10 +3,9 @@ platform:
     - traefik
     - argocd
     - external-secrets
-
 aws-ebs-csi-driver:
   controller:
-    k8sTagClusterId: lab-eks  
+    k8sTagClusterId: lab-eks
     serviceAccount:
       name: ebs-csi-controller-sa
   node:
@@ -22,14 +21,12 @@ aws-ebs-csi-driver:
       reclaimPolicy: Retain
       volumeBindingMode: WaitForFirstConsumer
       allowVolumeExpansion: true
-
 aws-load-balancer-controller:
   clusterName: lab-eks
   region: ap-southeast-1
   # Replace with `tofu output vpc_id` after re-provisioning in ap-southeast-1.
   vpcId: vpc-04b8aac84a36b4d0e
   fullnameOverride: aws-load-balancer-controller
-
 external-secrets:
   namespaceOverride: external-secrets
   fullnameOverride: external-secrets
@@ -37,58 +34,57 @@ external-secrets:
   serviceAccount:
     create: true
     name: external-secrets
-
 argo-cd:
   namespaceOverride: argocd
   fullnameOverride: argocd
-
 traefik:
   namespaceOverride: traefik
   fullnameOverride: traefik
-
   deployment:
-    replicas: 3
-    healthchecksPort: 8000
-
+    replicas: 5
+    healthchecksPort: 8082
   ports:
+    # `port` is Traefik's container listener; `exposedPort` becomes the
+    # `traefik` Service port (the NLB target). This does not affect app
+    # Services in goapi-dev, which Traefik reaches through IngressRoutes.
     api:
       port: 8000
       exposedPort: 80
       expose:
         default: true
       protocol: TCP
+    # Only `api` is enabled: NLB :443 -> traefik Service :80 -> pod :8000.
+    health:
+      port: 8082
+      expose:
+        default: false
     web: null
     websecure: null
     metrics: null
     traefik: null
-
   metrics:
     prometheus: null
   additionalArguments:
-    - "--ping.entrypoint=api"
-
+    - "--ping.entrypoint=health"
   api:
     dashboard: false
-
   providers:
     kubernetesCRD:
       enabled: true
+      # IngressRoutes outside these namespaces are ignored (404).
       namespaces:
         - goapi-dev
         - prod
     kubernetesIngress:
       enabled: false
-
   service:
     spec:
+      # ClusterIP only; the NLB and its TargetGroupBinding live in provision/.
       type: ClusterIP
-
   livenessProbe:
     periodSeconds: 30
-
   readinessProbe:
     failureThreshold: 3
-
   resources:
     requests:
       cpu: 50m
@@ -96,5 +92,3 @@ traefik:
     limits:
       cpu: 200m
       memory: 128Mi
-
-
