@@ -40,6 +40,12 @@ variable "cloudflare_zone_id" {
   description = "Cloudflare zone ID for lensboxd.site."
 }
 
+variable "acm_subject_alternative_names" {
+  type        = list(string)
+  description = "Additional DNS names covered by the NLB TLS certificate."
+  default     = []
+}
+
 variable "nlb_ssl_policy" {
   type        = string
   description = "TLS security policy for the NLB listener."

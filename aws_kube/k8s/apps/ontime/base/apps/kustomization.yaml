@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - api-gateway.yaml
+  - attendence-service.yaml
+  - identity-service.yaml
+  - notification-service.yaml
+  - ontime-web.yaml
+  - ingressroute.yaml

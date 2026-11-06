@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  labels:
+    app.kubernetes.io/name: notification-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notification-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: notification-service
+    spec:
+      containers:
+        - name: notification-service
+          image: unedotamps/ontime-notification:latest
+          ports:
+            - name: http
+              containerPort: 3004
+          env:
+            - name: KAFKA_BROKERS
+              value: ontime-kafka-bootstrap.ontime-dev.svc.cluster.local:9092
+            - name: IDENTITY_SERVICE_URL
+              value: http://identity-service
+            - name: SMTP_HOST
+              value: maildev
+            - name: SMTP_PORT
+              value: "1025"
+            - name: MAIL_FROM
+              value: "Ontime <no-reply@ontime.local>"
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  labels:
+    app.kubernetes.io/name: notification-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: notification-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

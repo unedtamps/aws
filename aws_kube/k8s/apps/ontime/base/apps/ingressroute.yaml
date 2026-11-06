@@ -1,0 +1,13 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ontime-web-ingress
+spec:
+  entryPoints:
+    - api
+  routes:
+    - match: Host(`ontime.lensboxd.site`)
+      kind: Rule
+      services:
+        - name: ontime-web
+          port: 80

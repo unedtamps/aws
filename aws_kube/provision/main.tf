@@ -28,8 +28,9 @@ module "eks" {
 module "acm" {
   source = "./modules/acm"
 
-  domain_name        = var.acm_domain_name
-  cloudflare_zone_id = var.cloudflare_zone_id
+  domain_name               = var.acm_domain_name
+  subject_alternative_names = var.acm_subject_alternative_names
+  cloudflare_zone_id        = var.cloudflare_zone_id
 }
 
 module "lb" {

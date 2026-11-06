@@ -89,6 +89,8 @@ traefik:
       namespaces:
         - goapi-dev
         - prod
+        - ontime-dev
+        - ontime-prod
     kubernetesIngress:
       enabled: false
   service:

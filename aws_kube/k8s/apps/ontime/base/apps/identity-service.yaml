@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-service
+  labels:
+    app.kubernetes.io/name: identity-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: identity-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: identity-service
+    spec:
+      containers:
+        - name: identity-service
+          # Placeholder image/tag; replace with the identity service image.
+          image: unedotamps/ontime-identity:latest
+          ports:
+            - name: http
+              containerPort: 3002
+          env:
+            - name: DB_IDENTITY_HOST
+              value: db-identity
+            - name: DB_IDENTITY_HOST_PORT
+              value: "1521"
+            - name: DB_IDENTITY_SERVICE
+              value: FREEPDB1
+            - name: DB_IDENTITY_USER
+              valueFrom:
+                secretKeyRef:
+                  name: identity-db-credentials
+                  key: app-user
+            - name: DB_IDENTITY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: identity-db-credentials
+                  key: app-password
+            - name: KAFKA_BROKERS
+              value: ontime-kafka-bootstrap.ontime-dev.svc.cluster.local:9092
+            - name: IDENTITY_MASTER_EMAIL
+              value: master@ontime.local
+            - name: IDENTITY_MASTER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: identity-db-credentials
+                  key: master-password
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-service
+  labels:
+    app.kubernetes.io/name: identity-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: identity-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
