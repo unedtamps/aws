@@ -3,6 +3,8 @@ platform:
     - traefik
     - argocd
     - external-secrets
+    # Created early so Strimzi can bind its namespaced RoleBinding here.
+    - ontime-dev
 aws-ebs-csi-driver:
   controller:
     k8sTagClusterId: lab-eks
@@ -37,6 +39,18 @@ external-secrets:
 argo-cd:
   namespaceOverride: argocd
   fullnameOverride: argocd
+strimzi-kafka-operator:
+  # Watch only the app namespace to keep the operator's RoleBinding scoped.
+  watchNamespaces:
+    - ontime-dev
+    - ontime-prod
+  watchAnyNamespace: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
 traefik:
   namespaceOverride: traefik
   fullnameOverride: traefik

@@ -13,8 +13,9 @@ WAIT_TIMEOUT  ?= 300
 WAIT_INTERVAL ?= 5
 
 UNINSTALL_CONFIRM ?=
+SKIP_CRDS         ?=
 
-.PHONY: help deps require-deps lint template render check status wait \
+.PHONY: help deps require-deps crds lint template render check status wait \
         install upgrade helm-status uninstall clean
 
 help:
@@ -25,10 +26,11 @@ help:
 		'  make template                Render manifests to stdout' \
 		'  make render                  Render manifests to $(OUTPUT)' \
 		'  make check                   Lint and render (verification)' \
+		'  make crds                    Apply CRDs from all vendored charts' \
 		'  make status                  Show all workloads across namespaces' \
 		'  make wait                    Block until all workloads are ready' \
-		'  make install                 helm upgrade --install' \
-		'  make upgrade                 helm upgrade' \
+		'  make install                 Apply CRDs, then helm upgrade --install' \
+		'  make upgrade                 Apply CRDs, then helm upgrade' \
 		'  make helm-status             helm status for this release' \
 		'  make uninstall               helm uninstall (UNINSTALL_CONFIRM=yes)' \
 		'  make clean                   Remove charts/ and $(OUTPUT)' \
@@ -50,6 +52,7 @@ help:
 		'  OUTPUT=rendered.yaml         Where make render writes' \
 		'  WAIT_TIMEOUT=$(WAIT_TIMEOUT)  Seconds before wait gives up' \
 		'  WAIT_INTERVAL=$(WAIT_INTERVAL) Seconds between readiness polls' \
+		'  SKIP_CRDS=1                  Skip CRD apply in install/upgrade' \
 		'  UNINSTALL_CONFIRM=yes        Required for uninstall'
 
 deps:
@@ -60,6 +63,19 @@ require-deps:
 		printf '%s\n' 'charts/ not found. Run: make deps'; \
 		exit 1; \
 	}
+
+# Apply CRDs from the parent chart and every vendored subchart. Helm only
+# installs CRDs on a first install and never on upgrade, so a chart added
+# later (Strimzi) would otherwise leave its CRDs missing. Server-side apply
+# avoids the 256 KiB annotation limit exceeded by large CRDs such as Kafka's.
+crds: require-deps
+	@if [ "$(SKIP_CRDS)" = "1" ]; then \
+		printf '%s\n' 'SKIP_CRDS=1: skipping CRD apply'; \
+		exit 0; \
+	fi; \
+	$(HELM) show crds $(CHART) \
+		| awk '/^apiVersion: apiextensions.k8s.io\// { print "---" } { print }' \
+		| $(KUBECTL) apply --server-side --force-conflicts -f -
 
 lint: require-deps
 	$(HELM) lint $(CHART) $(HELM_ARGS)
@@ -102,9 +118,11 @@ wait:
 	done
 
 install: require-deps
+	@$(MAKE) --no-print-directory crds
 	$(HELM) upgrade --install $(RELEASE) $(CHART) -n $(NAMESPACE) $(HELM_ARGS)
 
 upgrade: require-deps
+	@$(MAKE) --no-print-directory crds
 	$(HELM) upgrade $(RELEASE) $(CHART) -n $(NAMESPACE) $(HELM_ARGS)
 
 helm-status:
