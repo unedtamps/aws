@@ -6,16 +6,16 @@ namespace: ontime-dev
 images:
 - name: unedotamps/ontime-api-gateway
   newName: unedotamps/ontime-api-gateway
-  newTag: sha-f2b1e45
+  newTag: sha-df29390
 - name: unedotamps/ontime-attendence
   newName: unedotamps/ontime-attendence
-  newTag: sha-f2b1e45
+  newTag: sha-df29390
 - name: unedotamps/ontime-identity
   newName: unedotamps/ontime-identity
-  newTag: sha-f2b1e45
+  newTag: sha-df29390
 - name: unedotamps/ontime-notification
   newName: unedotamps/ontime-notification
-  newTag: sha-f2b1e45
+  newTag: sha-df29390
 - name: unedotamps/ontime-web
   newName: unedotamps/ontime-web
-  newTag: sha-f2b1e45
+  newTag: sha-df29390
