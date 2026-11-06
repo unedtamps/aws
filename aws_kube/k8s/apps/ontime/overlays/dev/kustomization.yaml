@@ -3,3 +3,14 @@ kind: Kustomization
 resources:
   - ../../base
 namespace: ontime-dev
+images:
+  - name: unedotamps/ontime-api-gateway
+    newTag: latest
+  - name: unedotamps/ontime-attendence
+    newTag: latest
+  - name: unedotamps/ontime-identity
+    newTag: latest
+  - name: unedotamps/ontime-notification
+    newTag: latest
+  - name: unedotamps/ontime-web
+    newTag: latest
