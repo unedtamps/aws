@@ -250,7 +250,7 @@ external-secrets:
 
 ```mermaid
 flowchart LR
-    awsSecret["AWS Secrets Manager<br/>lab-eks/external-secrets/app-1"]
+    awsSecret["AWS Secrets Manager<br/>lab-eks/external-secrets/app-2"]
     iam["IAM role<br/>lab-eks-external-secrets"]
 
     subgraph eks["Amazon EKS - lab-eks"]
@@ -283,17 +283,19 @@ dan dirender oleh overlay `apps/goapi/overlays/dev`. Provider AWS tidak memiliki
 
 ### Nilai Secret
 
-Secret yang dipakai saat ini:
+Secret yang dipakai saat ini dapat dibaca dari output OpenTofu:
 
-```text
-lab-eks/external-secrets/app-1
+```bash
+tofu -chdir=aws_kube/provision output -raw external_secret_name
 ```
 
 Wadah secret dibuat OpenTofu. **Nilai** diisi di luar Terraform dan Git:
 
 ```bash
+SECRET_ID="$(tofu -chdir=aws_kube/provision output -raw external_secret_name)"
+
 aws secretsmanager put-secret-value \
-  --secret-id lab-eks/external-secrets/app-1 \
+  --secret-id "$SECRET_ID" \
   --secret-string '{"username":"test-user"}' \
   --region ap-southeast-1
 ```
@@ -302,8 +304,6 @@ aws secretsmanager put-secret-value \
 menambah key tanpa kehilangan yang ada, baca dulu lalu gabungkan:
 
 ```bash
-SECRET_ID="lab-eks/external-secrets/app-1"
-
 read -rsp "Password baru: " NEW_PASSWORD; echo
 
 aws secretsmanager get-secret-value \
@@ -350,11 +350,11 @@ harus mendeklarasikan key tersebut, lalu Argo CD di-force refresh:
   data:
     - secretKey: username
       remoteRef:
-        key: lab-eks/external-secrets/app-1
+        key: lab-eks/external-secrets/app-2
         property: username
     - secretKey: password      # baru
       remoteRef:
-        key: lab-eks/external-secrets/app-1
+        key: lab-eks/external-secrets/app-2
         property: password      # baru
 ```
 
@@ -818,22 +818,24 @@ tersebut tidak masuk Service sehingga tidak mengganggu NLB.
 Resource ini menunjuk ke Service `traefik:80` dengan target type `ip`, sehingga
 IP Pod Traefik didaftarkan langsung ke Target Group.
 
-ARN Target Group di `platform/apps/values.yaml` (`targetGroup.arn`) harus
-disamakan dengan output OpenTofu:
+ARN Target Group di `platform/apps/values.yaml` (`targetGroup.arn`) dan nama
+secret pada semua `ExternalSecret` disinkronkan dari output OpenTofu dengan satu
+perintah:
 
 ```bash
-tofu -chdir=aws_kube/provision output -raw traefik_target_group_arn
+./aws_kube/scripts/update-runtime-values.sh
 ```
 
-Nilai saat ini:
+Script menampilkan kedua nilai yang dipakai, memperbarui seluruh file YAML, dan
+menulis snapshot ke `k8s/runtime-values.env`. Gunakan mode pemeriksaan untuk CI:
 
-```text
-arn:aws:elasticloadbalancing:ap-southeast-1:246830848520:targetgroup/lab-eks-traefik-http/2cba9b52f2bcd034
+```bash
+./aws_kube/scripts/update-runtime-values.sh --check
 ```
 
-Kalau Terraform me-recreate Target Group, ARN berubah dan binding tidak akan
-konek tanpa error. Perbarui `platform/apps/values.yaml`, lalu
-`make -C platform/apps upgrade`.
+Kalau Terraform me-recreate Target Group atau Secrets Manager secret, jalankan
+script lalu commit dan push YAML agar Argo CD menerapkan nilai baru. Untuk
+instalasi manual, jalankan `make -C platform/apps upgrade` setelah sinkronisasi.
 
 ## Aplikasi Development
 
@@ -897,7 +899,7 @@ dalam mount point. Tanpa itu, direktori `lost+found` ikut terbaca sebagai entry
 basis data dan `initdb` gagal.
 
 Kredensial database dibaca dari Secret `postgres-credentials`, yang diisi
-External Secrets dari `app-1`. Lihat bagian
+External Secrets dari `app-2`. Lihat bagian
 [Alur Secret](#alur-secret).
 
 Replica PostgreSQL saat ini `1` dan itu **bukan** HA. Menaikkan ke `3` tidak
@@ -1201,8 +1203,9 @@ Pastikan target Pod sudah tidak terdaftar sebelum menghancurkan NLB atau EKS.
 ## Batasan Saat Ini
 
 - Namespace platform dibuat manual dan tidak dikelola `helm uninstall`.
-- ARN Target Group di `platform/apps/values.yaml` masih hard-coded; harus
-  disamakan dengan output OpenTofu setiap kali Target Group di-recreate.
+- ARN Target Group dan nama secret di YAML adalah nilai hasil sinkronisasi.
+  Jalankan `./aws_kube/scripts/update-runtime-values.sh` setiap kali OpenTofu
+  membuat ulang Target Group atau secret.
 - VPC ID di `platform/core/values.yaml` masih hard-coded.
 - IAM policy ESO hanya mengizinkan satu secret; menambah secret baru perlu
   perubahan pada `../provision` terlebih dahulu.

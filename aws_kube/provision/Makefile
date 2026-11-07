@@ -1,5 +1,6 @@
 TOFU ?= tofu
 AWS_PROFILE ?= dev
+AWS_KUBE_ROOT := $(abspath ..)
 
 PLAN_DIR ?= plan
 PLAN_NAME ?=
@@ -29,7 +30,7 @@ TOFU_INIT_ARGS ?= -input=false -no-color
 TOFU_PLAN_ARGS ?= -input=false -no-color
 TOFU_APPLY_ARGS ?= -input=false -no-color
 
-.PHONY: help init fmt fmt-check validate plan plan-destroy destroy-plan apply destroy show show-destroy output state-list clean require-plan require-destroy-confirmation
+.PHONY: help init fmt fmt-check validate plan plan-destroy destroy-plan apply destroy show show-destroy output sync-yaml state-list clean require-plan require-destroy-confirmation
 
 help:
 	@printf '%s\n' \
@@ -45,6 +46,7 @@ help:
 		'  make fmt-check                                   Check formatting' \
 		'  make validate                                    Validate configuration' \
 		'  make output                                      Show state outputs' \
+		'  make sync-yaml                                   Update Kubernetes YAML from state outputs' \
 		'  make state-list                                  List resources in state' \
 		'  make clean                                       Remove generated plan files' \
 		'' \
@@ -124,6 +126,9 @@ show-destroy: require-plan
 
 output: init
 	AWS_PROFILE="$(AWS_PROFILE)" $(TOFU) output
+
+sync-yaml:
+	AWS_PROFILE="$(AWS_PROFILE)" TOFU_BIN="$(TOFU)" "$(AWS_KUBE_ROOT)/scripts/update-runtime-values.sh"
 
 state-list: init
 	AWS_PROFILE="$(AWS_PROFILE)" $(TOFU) state list

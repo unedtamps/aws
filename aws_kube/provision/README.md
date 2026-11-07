@@ -260,8 +260,22 @@ Output penting:
 |---|---|
 | `nlb_dns_name` | Target CNAME dan troubleshooting DNS |
 | `traefik_target_group_arn` | `TargetGroupBinding` Kubernetes |
+| `external_secret_name` | `remoteRef.key` pada seluruh `ExternalSecret` |
+| `external_secret_arn` | Policy IAM External Secrets Operator |
 | `acm_certificate_arn` | Verifikasi certificate listener NLB |
 | `aws_load_balancer_controller_role_arn` | Verifikasi EKS Pod Identity |
+
+Target Group ARN dan Secret Manager name dapat berubah setelah resource dibuat
+ulang. Setelah apply, sinkronkan kedua nilai tersebut ke semua YAML Kubernetes:
+
+```bash
+make sync-yaml AWS_PROFILE=dev
+```
+
+Perintah ini membaca `traefik_target_group_arn` dan `external_secret_name` dari
+state, menampilkan nilainya, lalu memperbarui semua referensi YAML. Snapshot
+terakhir juga disimpan di `k8s/runtime-values.env`. Commit dan push perubahan
+YAML jika Argo CD membaca manifest dari Git.
 
 ### 4. Hubungkan `kubectl`
 
@@ -341,9 +355,9 @@ tertinggal dan terus menagih biaya.
 
 ```bash
 tofu output vpc_id
-tofu output traefik_target_group_arn
+make sync-yaml AWS_PROFILE=dev
 ```
 
-Salin hasilnya ke `k8s/platform/core/values.yaml` (`vpcId`) dan
-`k8s/platform/apps/values.yaml` (`targetGroup.arn`), lalu install ulang chart
-`core` dan `apps`.
+Salin `vpc_id` ke `k8s/platform/core/values.yaml` (`vpcId`), lalu install ulang
+chart `core` dan `apps`. Script `sync-yaml` menangani ARN Target Group dan nama
+secret; VPC ID tidak termasuk karena tidak digunakan oleh `ExternalSecret`.
