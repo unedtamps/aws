@@ -5,4 +5,4 @@ resources:
   - service.yaml
   - ingressroute.yaml
   - secret.yaml
-  - statefulset.yaml
+  - postgres.yaml

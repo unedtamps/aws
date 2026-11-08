@@ -1,7 +1,7 @@
 targetGroup:
   # Re-created by `tofu apply` in ap-southeast-1. Replace this ARN with
   # `tofu output traefik_target_group_arn` after provisioning the new region.
-  arn: "arn:aws:elasticloadbalancing:ap-southeast-1:246830848520:targetgroup/lab-eks-traefik-http/e3fbef51ac6e9423"
+  arn: "arn:aws:elasticloadbalancing:ap-southeast-1:246830848520:targetgroup/lab-eks-traefik-http/f4894382497b0707"
   serviceName: traefik
   serviceNamespace: traefik
   servicePort: 80
