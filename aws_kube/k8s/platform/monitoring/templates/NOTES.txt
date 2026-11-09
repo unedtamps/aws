@@ -1,0 +1,15 @@
+Monitoring stack is installed in namespace {{ .Release.Namespace }}.
+
+Grafana
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-grafana 3000:80
+  URL:      http://localhost:3000
+  User:     admin
+  Password: kubectl -n {{ .Release.Namespace }} get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d
+
+Prometheus
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-kube-prometheus-prometheus 9090:9090
+  URL: http://localhost:9090
+
+Alertmanager
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-kube-prometheus-alertmanager 9093:9093
+  URL: http://localhost:9093

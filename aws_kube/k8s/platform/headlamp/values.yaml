@@ -1,0 +1,8 @@
+headlamp:
+  service:
+    type: ClusterIP
+  clusterRoleBinding:
+    create: true
+    clusterRoleName: cluster-admin
+  ingress:
+    enabled: false

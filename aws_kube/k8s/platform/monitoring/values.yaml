@@ -1,0 +1,106 @@
+kube-prometheus-stack:
+  # EKS manages etcd, the scheduler and the controller manager outside the
+  # cluster, so these targets can never be scraped. Leaving them enabled only
+  # produces DOWN targets and false alerts.
+  kubeEtcd:
+    enabled: false
+  kubeControllerManager:
+    enabled: false
+  kubeScheduler:
+    enabled: false
+  kubeProxy:
+    enabled: false
+  defaultRules:
+    rules:
+      etcd: false
+      kubeControllerManager: false
+      kubeSchedulerAlerting: false
+      kubeSchedulerRecording: false
+      kubeProxy: false
+  prometheus:
+    prometheusSpec:
+      retention: 24h
+      scrapeInterval: 30s
+      evaluationInterval: 30s
+      # Pick up ServiceMonitors/PodMonitors from every namespace instead of
+      # only those carrying this release's label.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          memory: 1Gi
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: gp3
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 20Gi
+  alertmanager:
+    alertmanagerSpec:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          memory: 64Mi
+    config:
+      route:
+        receiver: email
+        group_by:
+          - alertname
+          - namespace
+        repeat_interval: 4h
+        routes:
+          - matchers: ['alertname = "Watchdog"']
+            receiver: "null"
+      receivers:
+        - name: email
+          email_configs:
+            - to: oncall@ontime.local
+              from: alertmanager@ontime.local
+              smarthost: maildev.ontime-dev.svc.cluster.local:1025
+              require_tls: false
+              send_resolved: true
+        - name: "null"
+  grafana:
+    admin:
+      existingSecret: grafana-admin
+    defaultDashboardsTimezone: Asia/Jakarta
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 1Gi
+    persistence:
+      enabled: false
+    service:
+      type: ClusterIP
+  kubeStateMetrics:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+  nodeExporter:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+  prometheusOperator:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 256Mi

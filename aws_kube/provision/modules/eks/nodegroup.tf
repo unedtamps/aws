@@ -11,9 +11,9 @@ resource "aws_eks_node_group" "main" {
   instance_types = ["c7i-flex.large"]
 
   scaling_config {
-    desired_size = 4
+    desired_size = 5
     min_size     = 2
-    max_size     = 4
+    max_size     = 5
   }
 
   update_config {

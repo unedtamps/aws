@@ -1,0 +1,9 @@
+Headlamp is installed in namespace {{ .Release.Namespace }}.
+
+Open the UI:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }} 4466:80
+
+Then browse to:
+  http://localhost:4466
+
+Headlamp uses an in-cluster service account, so no token is required.
