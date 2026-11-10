@@ -14,10 +14,11 @@ resource "aws_eip" "nlb_b" {
   }
 }
 resource "aws_lb" "traefik" {
-  name               = "lab-eks-traefik"
-  internal           = false
-  load_balancer_type = "network"
-  ip_address_type    = "ipv4"
+  name                             = "lab-eks-traefik"
+  internal                         = false
+  load_balancer_type               = "network"
+  ip_address_type                  = "ipv4"
+  enable_cross_zone_load_balancing = true
 
   subnet_mapping {
     subnet_id     = var.public_subnet_ids[0]

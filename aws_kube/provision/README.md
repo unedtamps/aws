@@ -1,19 +1,20 @@
 # AWS EKS Provisioning
 
-Folder ini berisi konfigurasi OpenTofu untuk membangun infrastruktur utama
-Cloud Engineering Lab di AWS. Stack mencakup remote state, network multi-AZ,
-IAM, Amazon EKS, TLS certificate, internet-facing NLB, security group rule, dan
-Cloudflare DNS.
+This folder contains the OpenTofu configuration for the main Cloud Engineering
+Lab infrastructure on AWS. The stack covers remote state, a multi-AZ network,
+IAM, Amazon EKS, TLS certificates, an internet-facing NLB, security group
+rules, Cloudflare DNS, and an OpenVPN server for private EKS API access.
 
-Kubernetes workload tidak dikelola dari folder ini. Setelah provisioning selesai,
-lanjutkan ke [dokumentasi Kubernetes](../k8s/README.md).
+Kubernetes workloads are not managed from this folder. After provisioning,
+continue with the [Kubernetes documentation](../k8s/README.md).
 
-## Arsitektur AWS
+## AWS Architecture
 
 ```mermaid
 flowchart TB
     client["Internet Client"] --> dns["Cloudflare DNS<br/>traefik.lensboxd.site"]
     dns --> nlb
+    admin["Operator Laptop"] -->|"OpenVPN split tunnel"| vpn["OpenVPN EC2<br/>Elastic IP"]
 
     subgraph aws["AWS Account - ap-southeast-1"]
         acm["AWS Certificate Manager<br/>TLS Certificate"] --> nlb
@@ -26,6 +27,7 @@ flowchart TB
                 pubA["ap-southeast-1a<br/>10.20.32.0/20"]
                 pubB["ap-southeast-1b<br/>10.20.48.0/20"]
                 nlb["Network Load Balancer<br/>2 Elastic IPs<br/>TLS :443"]
+                vpn
             end
 
             nat["Regional NAT Gateway<br/>VPC-scoped"]
@@ -33,7 +35,7 @@ flowchart TB
             subgraph private["Private Subnets"]
                 priA["ap-southeast-1a<br/>10.20.0.0/20"]
                 priB["ap-southeast-1b<br/>10.20.16.0/20"]
-                nodes["EKS Managed Node Group<br/>2-4 x t3.small"]
+                nodes["EKS Managed Node Group<br/>6 x c7i-flex.large"]
                 pods["Traefik and Application Pods"]
             end
 
@@ -47,11 +49,13 @@ flowchart TB
             nat --> igw
             pubA --> nlb
             pubB --> nlb
+            pubA --> vpn
         end
 
-        eks["Amazon EKS Control Plane<br/>Public + Private API"] --> nodes
-        iam["IAM Roles and Pod Identity"] --> eks
+        eks["Amazon EKS Control Plane<br/>Private API"] --> nodes
+        iam["IAM Roles and Pod Identity<br/>(modules/eks)"] --> eks
         iam --> pods
+        vpn --> eks
     end
 
     tofu["OpenTofu"] --> state
@@ -62,13 +66,24 @@ flowchart TB
     tofu --> dns
 ```
 
-Diagram menunjukkan dua jalur yang berbeda:
+The Mermaid diagram above is a lightweight, source-controlled overview. The
+complete provisioning diagram is below.
 
-- Control path: OpenTofu membuat resource AWS dan menyimpan state di S3.
-- Data path: client masuk melalui Cloudflare, NLB, Target Group, Traefik, lalu
-  aplikasi di EKS.
+### Complete Provisioning Diagram
 
-## Dependensi Module
+![Complete AWS EKS provisioning architecture](docs/provision-architecture.png)
+
+[Open the editable diagram in Excalidraw](https://excalidraw.com/#json=m3v3sGFV0BBKWbb3UjrEb,zGMfu7TCeTV7TIB2ZQLkfA)
+
+The complete diagram shows three paths:
+
+- Control path: OpenTofu creates AWS resources and stores state in S3.
+- Application data path: clients enter through Cloudflare, the NLB, the target
+  group, Traefik, and then the application pods.
+- Administrative path: operators connect through OpenVPN and reach the EKS
+  private API. The public EKS endpoint is disabled.
+
+## Module Dependencies
 
 ```mermaid
 flowchart LR
@@ -83,181 +98,202 @@ flowchart LR
     eks --> sg
 ```
 
-## Struktur Folder
+## Folder Structure
 
 ```text
 provision/
 |-- bootstrap/
-|   `-- main.tf                 # Membuat S3 remote-state bucket
+|   `-- main.tf                 # Creates the S3 remote-state bucket
+|-- docs/
+|   `-- provision-architecture.png
 |-- modules/
-|   |-- acm/                    # Certificate dan DNS validation
+|   |-- acm/                    # Certificate and DNS validation
 |   |-- eks/                    # Cluster, node group, access, Pod Identity, IAM
-|   |-- lb/                     # NLB, EIP, listener, dan target group
-|   |-- networking/             # VPC, subnet, route, IGW, dan NAT
-|   `-- vpn/                    # OpenVPN server untuk akses EKS private
-|-- backend.tf                  # Konfigurasi S3 backend
-|-- dns.tf                      # CNAME publik menuju NLB
-|-- main.tf                     # Komposisi seluruh module
-|-- outputs.tf                  # Output lintas tahap deployment
-|-- provider.tf                 # AWS dan Cloudflare provider
-|-- security-groups.tf          # Ingress NLB ke Traefik dan API dari VPN
-|-- variables.tf                # Input root module
-|-- versions.tf                 # Versi OpenTofu dan provider
-|-- vpn.tf                      # OpenVPN server dan route balik client
-`-- Makefile                    # Workflow plan, apply, dan destroy
+|   |-- lb/                     # NLB, EIP, listener, and target group
+|   |-- networking/             # VPC, subnets, routes, IGW, and NAT
+|   `-- vpn/                    # OpenVPN server for private EKS access
+|-- backend.tf                  # S3 backend configuration
+|-- dns.tf                      # Public CNAME pointing to the NLB
+|-- main.tf                     # Root module composition
+|-- outputs.tf                  # Cross-stage deployment outputs
+|-- provider.tf                 # AWS and Cloudflare providers
+|-- security-groups.tf          # NLB-to-Traefik and VPN-to-EKS API rules
+|-- variables.tf                # Root module inputs
+|-- versions.tf                 # OpenTofu and provider versions
+|-- vpn.tf                      # OpenVPN server and VPN client return route
+`-- Makefile                    # plan, apply, and destroy workflow
 ```
 
-## Detail Komponen
+## Component Details
 
 ### Remote State
 
-Stack `bootstrap` menggunakan local state untuk membuat bucket
-`aws-kube-tofu-state-246830848520`. Bucket dikonfigurasi dengan:
+The `bootstrap` stack uses local state to create the
+`aws-kube-tofu-state-246830848520` bucket. The bucket is configured with:
 
 - S3 versioning.
-- Server-side encryption `AES256`.
+- Server-side encryption using `AES256`.
 - Public access block.
 - Bucket owner enforced.
-- Policy yang menolak koneksi tanpa HTTPS.
-- `force_destroy = false` untuk mencegah penghapusan isi secara tidak sengaja.
+- A policy that rejects connections without HTTPS.
+- `force_destroy = false` to prevent accidental deletion of bucket contents.
 
-Main stack memakai key `aws-kube/dev/eks/terraform.tfstate` dan native S3
-lockfile. Jika nama bucket atau state key bootstrap diubah, perbarui juga
-`backend.tf`; output bootstrap tidak mengubah backend secara otomatis.
+The main stack uses the key `aws-kube/dev/eks/terraform.tfstate` and native S3
+lockfile. If the bucket name or bootstrap state key changes, update
+`backend.tf` as well; the bootstrap outputs do not change the backend
+automatically.
 
 ### Networking
 
-| Network | Availability Zone | CIDR | Fungsi |
+| Network | Availability Zone | CIDR | Purpose |
 |---|---|---|---|
-| Private subnet A | `ap-southeast-1a` | `10.20.0.0/20` | EKS node dan Pod |
-| Private subnet B | `ap-southeast-1b` | `10.20.16.0/20` | EKS node dan Pod |
-| Public subnet A | `ap-southeast-1a` | `10.20.32.0/20` | NLB, EIP, dan jalur internet |
-| Public subnet B | `ap-southeast-1b` | `10.20.48.0/20` | NLB, EIP, dan jalur internet |
+| Private subnet A | `ap-southeast-1a` | `10.20.0.0/20` | EKS nodes and pods |
+| Private subnet B | `ap-southeast-1b` | `10.20.16.0/20` | EKS nodes and pods |
+| Public subnet A | `ap-southeast-1a` | `10.20.32.0/20` | NLB, EIPs, internet egress, VPN |
+| Public subnet B | `ap-southeast-1b` | `10.20.48.0/20` | NLB, EIPs, and internet egress |
 
-VPC menggunakan CIDR `10.20.0.0/16`. Kedua private subnet memakai satu
-regional NAT Gateway untuk akses keluar. Subnet juga memiliki tag discovery
-Kubernetes untuk resource internal dan internet-facing load balancer.
+The VPC uses `10.20.0.0/16`. Both private subnets use a single regional NAT
+Gateway for outbound access. Subnets also carry the Kubernetes discovery tags
+for internal and internet-facing load balancers.
 
-### IAM dan EKS
+### IAM and EKS
 
-Role IAM untuk EKS dan add-on-nya berada di `modules/eks`. `modules/secret`
-memiliki role External Secrets, dan `modules/vpn` memiliki role SSM untuk EC2
-VPN. `modules/lb` sengaja tidak memiliki IAM karena NLB tidak memakai role;
-role Load Balancer Controller adalah identitas Pod, bukan resource NLB.
+IAM roles for EKS and its add-ons live in `modules/eks`. `modules/secret` owns
+the External Secrets role, and `modules/vpn` owns the SSM role for the VPN EC2
+instance. `modules/lb` intentionally has no IAM because the NLB does not assume
+a role; the Load Balancer Controller role is a pod identity, not an NLB
+resource.
 
-| Identity | Digunakan oleh | Permission utama |
+The IAM roles previously lived in `modules/iam`. They were merged into
+`modules/eks`; `moved.tf` preserves the state addresses without replacing any
+role.
+
+| Identity | Used by | Main permissions |
 |---|---|---|
 | EKS cluster role | EKS control plane | `AmazonEKSClusterPolicy` |
-| EKS node role | Managed node group | Worker, VPC CNI, dan ECR pull policies |
-| VPC CNI role | `kube-system/aws-node` | EKS Pod Identity untuk networking Pod |
-| Load Balancer Controller role | `kube-system/aws-load-balancer-controller` | EKS Pod Identity untuk registrasi target group |
-| EBS CSI role | `kube-system/ebs-csi-controller-sa` | EKS Pod Identity untuk volume EBS |
-| External Secrets role | `external-secrets/external-secrets` | Membaca secret di Secrets Manager |
+| EKS node role | Managed node group | Worker, VPC CNI, and ECR pull policies |
+| VPC CNI role | `kube-system/aws-node` | EKS Pod Identity for pod networking |
+| Load Balancer Controller role | `kube-system/aws-load-balancer-controller` | EKS Pod Identity for target group registration |
+| EBS CSI role | `kube-system/ebs-csi-controller-sa` | EKS Pod Identity for EBS volumes |
+| External Secrets role | `external-secrets/external-secrets` | Reads secrets from Secrets Manager |
 
-Konfigurasi cluster saat ini:
+Current cluster configuration:
 
-| Item | Konfigurasi |
+| Item | Configuration |
 |---|---|
-| Nama cluster | `lab-eks` |
+| Cluster name | `lab-eks` |
 | Kubernetes | `1.36` |
-| API endpoint | Private saja (public dinonaktifkan) |
-| Public API allowlist | Tidak dipakai saat public endpoint mati |
+| API endpoint | Private only (public endpoint disabled) |
+| Public API allowlist | Not used while the public endpoint is disabled |
 | Authentication mode | EKS API |
 | Node group | Managed, on-demand, AL2023 x86-64 |
 | Instance type | `c7i-flex.large` |
-| Scaling | Minimum 2, desired 6, maksimum 6 |
+| Scaling | Minimum 2, desired 6, maximum 6 |
 | Root volume | 20 GiB |
 
-Cluster creator tidak otomatis memperoleh akses administrator. EKS access
-entry saat ini memberikan cluster-admin kepada IAM user environment lab yang
-didefinisikan pada module EKS. Ganti principal tersebut sebelum digunakan di
-account lain.
+The cluster creator does not automatically receive administrator access. The
+current EKS access entry grants cluster-admin to the lab IAM user defined in
+the EKS module. Replace that principal before using this configuration in
+another account.
 
-### TLS, Load Balancer, dan DNS
+### TLS, Load Balancer, and DNS
 
-- ACM membuat certificate untuk `acm_domain_name`.
-- Cloudflare DNS record digunakan untuk validasi certificate.
-- NLB bersifat internet-facing dan memakai satu Elastic IP per public subnet.
-- Listener hanya membuka TLS port `443`.
-- TLS policy default adalah `ELBSecurityPolicy-TLS13-1-2-2021-06`.
-- Listener meneruskan koneksi ke IP Target Group menggunakan TCP. Target Group
-  memiliki default port `80`, sedangkan controller mendaftarkan setiap IP Pod
-  Traefik pada resolved target port `8000`.
-- `TargetGroupBinding` di Kubernetes mendaftarkan IP Pod Traefik ke Target Group.
-- CNAME `traefik.lensboxd.site` mengarah langsung ke DNS NLB dengan proxy
-  Cloudflare dinonaktifkan.
+- ACM issues the certificate for `acm_domain_name`.
+- Cloudflare DNS records are used for certificate validation.
+- The NLB is internet-facing and uses one Elastic IP per public subnet.
+- The listener only exposes TLS port `443`.
+- The default TLS policy is `ELBSecurityPolicy-TLS13-1-2-2021-06`.
+- The listener forwards to an IP target group over TCP. The target group has
+  default port `80`, while the controller registers each Traefik pod IP on the
+  resolved target port `8000`.
+- The Kubernetes `TargetGroupBinding` registers Traefik pod IPs with the target
+  group.
+- The CNAME `traefik.lensboxd.site` points directly to the NLB DNS name with
+  Cloudflare proxy disabled.
 
-Tidak ada listener HTTP port `80`; client harus menggunakan HTTPS.
+There is no HTTP listener on port `80`; clients must use HTTPS.
 
-### Security Group
+### Security Groups
 
-NLB tidak memakai security group pada desain ini. File `security-groups.tf`
-menambahkan ingress TCP port `8000` ke cluster security group dari kedua CIDR
-public subnet NLB. Rule ini memungkinkan traffic NLB dan health check mencapai
-Pod Traefik.
+The NLB does not use a security group in this design. `security-groups.tf`
+adds an ingress rule for TCP port `8000` on the cluster security group from
+both NLB public subnet CIDRs. This allows NLB traffic and health checks to
+reach the Traefik pods.
 
-File yang sama membuat `eks_api_vpn`, security group tambahan yang hanya
-dipasang ke ENI control plane EKS. Ingress-nya hanya TCP `443` dari
-`vpn_client_cidr`, sehingga node, Pod, Oracle, dan Kafka tidak terbuka untuk
-client VPN.
+The same file creates `eks_api_vpn`, an additional security group attached
+only to the EKS control plane ENIs. Its only ingress rule is TCP `443` from
+`vpn_client_cidr`, so nodes, pods, Oracle, and Kafka are not exposed to VPN
+clients.
 
-### VPN untuk EKS Private Endpoint
+### VPN for the EKS Private Endpoint
 
-`modules/vpn` membuat satu EC2 OpenVPN server di public subnet dengan Elastic
-IP. Client memakai split tunnel: hanya `10.20.0.0/16` yang lewat VPN dan DNS
-diarahkan ke resolver VPC `10.20.0.2`.
+`modules/vpn` creates one OpenVPN EC2 instance in a public subnet with an
+Elastic IP. Clients use split tunneling: only `10.20.0.0/16` goes through the
+VPN, and DNS is pointed at the VPC resolver `10.20.0.2`.
 
-Alur pemakaian:
+Usage flow:
 
-1. Apply dengan `cluster_endpoint_public_access = true` supaya akses lama tetap
-   tersedia selama VPN dibangun.
-2. Connect OpenVPN dan pastikan hostname EKS resolve ke IP private
+1. Apply with `cluster_endpoint_public_access = true` only while the VPN is
+   being built or used for recovery, so the previous access path remains
+   available.
+2. Connect OpenVPN and verify that the EKS hostname resolves to a private IP
    (`getent hosts <eks-endpoint>`).
-3. Set `cluster_endpoint_public_access = false`, lalu apply ulang.
-4. Verifikasi `kubectl get nodes` melalui VPN dan gagal tanpa VPN.
+3. Set `cluster_endpoint_public_access = false` and apply again.
+4. Verify that `kubectl get nodes` works through the VPN and fails without it.
 
-Kode dan konfigurasi VPN sudah ada di repository, tetapi **belum di-apply**.
-Detail client certificate dan revoke ada di `modules/vpn/README.md`.
+The VPN is already applied and the public EKS endpoint is disabled. Reconnect
+the VPN before running `kubectl` or Helm commands from the operator laptop.
+`kubectl port-forward` still works because it goes through the Kubernetes API
+server on port `443`; direct pod, node, Oracle, and Kafka access is blocked by
+the security groups.
 
-## Prasyarat
+The VPN AMI is pinned by `vpn_ami_id` to avoid an unexpected instance
+replacement when a new AL2023 AMI is published. Changing the AMI replaces the
+instance, regenerates the PKI, and invalidates existing client `.ovpn` files.
+Client certificate and revoke details are in `modules/vpn/README.md`.
+
+## Prerequisites
 
 - OpenTofu `>= 1.8.0`.
-- AWS CLI profile yang dapat membuat resource VPC, EKS, IAM, ELB, ACM, dan S3.
-- Cloudflare API token dengan akses DNS edit untuk zone yang digunakan.
+- An AWS CLI profile that can create VPC, EKS, IAM, ELB, ACM, and S3 resources.
+- A Cloudflare API token with DNS edit access for the zone in use.
 - GNU Make.
 
-Contoh environment lokal:
+Local environment example:
 
 ```bash
 export AWS_PROFILE=dev
 export CLOUDFLARE_API_TOKEN='<cloudflare-api-token>'
 ```
 
-Jangan menyimpan token asli di repository.
+Do not store the real token in the repository.
 
 ## Input Environment
 
-Buat `terraform.tfvars` lokal yang tidak di-commit:
+Create a local `terraform.tfvars` that is not committed:
 
 ```hcl
 cluster_name                         = "lab-eks"
 cluster_version                      = "1.36"
-cluster_endpoint_public_access       = true # false setelah VPN terverifikasi
+cluster_endpoint_public_access       = false
 cluster_endpoint_public_access_cidrs = ["203.0.113.10/32"]
 vpn_admin_cidrs                      = ["203.0.113.10/32"]
+vpn_ami_id                           = "ami-023f84fd3f1adceea"
 acm_domain_name                      = "traefik.lensboxd.site"
 cloudflare_zone_id                   = "<cloudflare-zone-id>"
 ```
 
-Gunakan public IP administrator sebagai `/32` untuk membatasi akses ke public
-Kubernetes API. Jangan memakai `0.0.0.0/0` untuk environment yang tidak memang
-membutuhkannya.
+Use the administrator public IP as a `/32` to restrict access to the public
+Kubernetes API. Do not use `0.0.0.0/0` for environments that do not require it.
+
+For a fresh bootstrap, temporarily set `cluster_endpoint_public_access = true`
+until the VPN path is verified. Set it back to `false` afterward.
 
 ## Provisioning
 
-### 1. Bootstrap S3 Backend
+### 1. Bootstrap the S3 Backend
 
-Jalankan sekali sebelum inisialisasi main stack:
+Run once before initializing the main stack:
 
 ```bash
 cd aws_kube/provision/bootstrap
@@ -266,9 +302,9 @@ AWS_PROFILE=dev tofu plan -out=bootstrap.tfplan
 AWS_PROFILE=dev tofu apply bootstrap.tfplan
 ```
 
-### 2. Plan Main Stack
+### 2. Plan the Main Stack
 
-Dari folder `aws_kube/provision`:
+From `aws_kube/provision`:
 
 ```bash
 make fmt-check
@@ -277,41 +313,47 @@ make plan dev AWS_PROFILE=dev
 make show dev
 ```
 
-Plan disimpan sebagai `plan/dev.tfplan`. Selalu periksa plan sebelum apply.
+The plan is saved as `plan/dev.tfplan`. Always review the plan before applying.
 
-### 3. Apply Main Stack
+### 3. Apply the Main Stack
 
 ```bash
 make apply dev AWS_PROFILE=dev
 make output AWS_PROFILE=dev
 ```
 
-Output penting:
+Important outputs:
 
-| Output | Digunakan untuk |
+| Output | Used for |
 |---|---|
-| `nlb_dns_name` | Target CNAME dan troubleshooting DNS |
-| `traefik_target_group_arn` | `TargetGroupBinding` Kubernetes |
-| `external_secret_name` | `remoteRef.key` pada seluruh `ExternalSecret` |
-| `external_secret_arn` | Policy IAM External Secrets Operator |
-| `acm_certificate_arn` | Verifikasi certificate listener NLB |
-| `aws_load_balancer_controller_role_arn` | Verifikasi EKS Pod Identity |
+| `nlb_dns_name` | Target CNAME and DNS troubleshooting |
+| `traefik_target_group_arn` | Kubernetes `TargetGroupBinding` |
+| `external_secret_name` | `remoteRef.key` in every `ExternalSecret` |
+| `external_secret_arn` | External Secrets Operator IAM policy |
+| `acm_certificate_arn` | NLB listener certificate verification |
+| `aws_load_balancer_controller_role_arn` | EKS Pod Identity verification |
+| `vpn_public_ip` | OpenVPN client `remote` address |
+| `vpn_instance_id` | SSM Session Manager and client certificate retrieval |
 
-Target Group ARN dan Secret Manager name dapat berubah setelah resource dibuat
-ulang. Setelah apply, sinkronkan kedua nilai tersebut ke semua YAML Kubernetes:
+The target group ARN and Secrets Manager name can change after resources are
+recreated. After applying, synchronize both values into the Kubernetes YAML:
 
 ```bash
 make sync-yaml AWS_PROFILE=dev
 ```
 
-Perintah ini membaca `traefik_target_group_arn` dan `external_secret_name` dari
-state, menampilkan nilainya, lalu memperbarui semua referensi YAML. Snapshot
-terakhir juga disimpan di `k8s/runtime-values.env`. Commit dan push perubahan
-YAML jika Argo CD membaca manifest dari Git.
+This command reads `traefik_target_group_arn` and `external_secret_name` from
+state, prints their values, and updates all YAML references. The latest
+snapshot is also stored in `k8s/runtime-values.env`. Commit and push the YAML
+changes if Argo CD reads manifests from Git.
 
-### 4. Hubungkan `kubectl`
+### 4. Connect `kubectl`
+
+Connect the VPN first, then update the kubeconfig:
 
 ```bash
+sudo openvpn --config ~/.config/openvpn/lab-eks.ovpn
+
 AWS_PROFILE=dev aws eks update-kubeconfig \
   --region ap-southeast-1 \
   --name lab-eks
@@ -319,9 +361,12 @@ AWS_PROFILE=dev aws eks update-kubeconfig \
 kubectl get nodes
 ```
 
-Lanjutkan deployment melalui [`../k8s/README.md`](../k8s/README.md).
+The AWS API call works without the VPN, but `kubectl` requires the private
+endpoint and therefore an active VPN connection.
 
-## Verifikasi Infrastruktur
+Continue with [`../k8s/README.md`](../k8s/README.md) for workload deployment.
+
+## Infrastructure Verification
 
 ```bash
 make state-list AWS_PROFILE=dev
@@ -336,12 +381,12 @@ AWS_PROFILE=dev aws elbv2 describe-target-health \
   --target-group-arn "$(tofu output -raw traefik_target_group_arn)"
 ```
 
-Target baru menjadi `healthy` setelah AWS Load Balancer Controller, Traefik,
-dan `TargetGroupBinding` selesai di-deploy.
+The target becomes `healthy` after the AWS Load Balancer Controller, Traefik,
+and the `TargetGroupBinding` are deployed.
 
 ## Destroy
 
-Hapus workload Kubernetes lebih dahulu, lalu buat saved destroy plan:
+Delete Kubernetes workloads first, then create a saved destroy plan:
 
 ```bash
 make plan-destroy dev AWS_PROFILE=dev
@@ -349,50 +394,52 @@ make show-destroy dev
 make destroy dev AWS_PROFILE=dev DESTROY_CONFIRM=yes
 ```
 
-Bucket bootstrap tidak otomatis ikut terhapus. Karena versioning aktif dan
-`force_destroy = false`, semua object version dan delete marker harus ditangani
-secara sadar sebelum bucket dapat dihapus.
+The bootstrap bucket is not deleted automatically. Because versioning is
+enabled and `force_destroy = false`, all object versions and delete markers
+must be handled deliberately before the bucket can be removed.
 
-## Catatan Portabilitas
+## Portability Notes
 
-Konfigurasi berikut masih terikat pada environment lab dan harus ditinjau saat
-melakukan deployment baru:
+The following configuration is still tied to the lab environment and must be
+reviewed for a new deployment:
 
-- AWS account ID pada state bucket, IAM principal, dan Target Group ARN.
-- Region `ap-southeast-1` pada provider; remote state backend tetap di bucket
+- AWS account ID in the state bucket, IAM principal, and target group ARN.
+- Region `ap-southeast-1` in the provider; the remote state bucket remains in
   `eu-north-1`.
-- Domain `traefik.lensboxd.site` pada DNS dan Kubernetes `IngressRoute`.
-- Backend bucket dan object key.
-- VPC ID pada script instalasi AWS Load Balancer Controller.
-- ARN Target Group pada manifest `TargetGroupBinding`.
-- Nama NLB `lab-eks-traefik` dan Target Group `lab-eks-traefik-http`.
-- Nama IAM role `eks-cluster-role`, `eks-node-role`, dan `eks-vpc-cni-role`.
-- `vpn_ami_id` adalah AMI AL2023 arm64 khusus `ap-southeast-1`. Ganti nilainya
-  saat pindah region atau saat ingin upgrade AMI; perubahan ini akan
-  mengganti instance VPN dan membuat ulang certificate client.
+- Domain `traefik.lensboxd.site` in DNS and the Kubernetes `IngressRoute`.
+- Backend bucket and object key.
+- VPC ID in the AWS Load Balancer Controller install script.
+- Target group ARN in the `TargetGroupBinding` manifest.
+- NLB name `lab-eks-traefik` and target group name `lab-eks-traefik-http`.
+- IAM role names `eks-cluster-role`, `eks-node-role`, and `eks-vpc-cni-role`.
+- `vpn_ami_id` is an AL2023 arm64 AMI specific to `ap-southeast-1`. Change it
+  when moving regions or upgrading the AMI; this replaces the VPN instance and
+  regenerates client certificates.
 
-Resource EKS, NAT Gateway, NLB, EC2 worker node, dan Elastic IP menimbulkan biaya
-selama aktif.
+EKS, the NAT Gateway, the NLB, EC2 worker nodes, the VPN EC2 instance, and the
+Elastic IPs incur charges while they are running.
 
-## Pindah Region
+## Moving Regions
 
-State masih menyimpan resource yang dibuat di region lama. Destroy dulu dengan
-konfigurasi lama sebelum apply ke region baru, supaya resource lama tidak
-tertinggal dan terus menagih biaya.
+State still contains resources created in the old region. Destroy them with the
+old configuration before applying in a new region so that the old resources are
+not left behind and continue to incur charges.
 
-1. Kembalikan sementara `provider.tf` dan AZ di `modules/networking/main.tf`
-   ke region lama (`eu-north-1`).
-2. Jalankan `make plan-destroy old` lalu
+1. Temporarily restore `provider.tf` and the AZ values in
+   `modules/networking/main.tf` to the old region (`eu-north-1`).
+2. Run `make plan-destroy old` and then
    `make destroy old DESTROY_CONFIRM=yes`.
-3. Kembalikan `provider.tf` dan AZ ke region baru (`ap-southeast-1`).
-4. Jalankan `make plan dev`, tinjau hasilnya, lalu `make apply dev`.
-5. Setelah apply, perbarui nilai yang ikut berubah:
+3. Restore `provider.tf` and the AZ values to the new region
+   (`ap-southeast-1`).
+4. Run `make plan dev`, review the result, and then `make apply dev`.
+5. Update the values that change with the new region:
 
 ```bash
 tofu output vpc_id
 make sync-yaml AWS_PROFILE=dev
 ```
 
-Salin `vpc_id` ke `k8s/platform/core/values.yaml` (`vpcId`), lalu install ulang
-chart `core` dan `apps`. Script `sync-yaml` menangani ARN Target Group dan nama
-secret; VPC ID tidak termasuk karena tidak digunakan oleh `ExternalSecret`.
+Copy `vpc_id` into `k8s/platform/core/values.yaml` (`vpcId`), then reinstall
+the `core` and `apps` charts. The `sync-yaml` script handles the target group
+ARN and secret name; the VPC ID is not included because `ExternalSecret` does
+not use it.
