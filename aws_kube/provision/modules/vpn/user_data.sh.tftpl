@@ -1,0 +1,148 @@
+#!/bin/bash
+#
+# OpenVPN server bootstrap for the ${cluster_name} lab.
+#
+# Split tunnel only: clients receive a route for 10.20.0.0/16 and the VPC
+# resolver. No redirect-gateway is pushed, so internet traffic stays local.
+set -euxo pipefail
+
+# The instance gets an ephemeral public IP at launch and the Elastic IP is
+# associated right after. Wait until outbound HTTPS works before installing.
+for attempt in $(seq 1 60); do
+  if curl -fsS --max-time 3 https://amazon.com >/dev/null 2>&1; then
+    break
+  fi
+  sleep 5
+done
+
+dnf install -y openvpn
+
+# easy-rsa is not packaged in the AL2023 repositories. Use the pinned
+# upstream release and verify its checksum before extracting it.
+EASYRSA_VERSION=3.2.7
+EASYRSA_SHA256=308743bc9fe871b902d47dbe98d749daff3a05b27531684f02625ce7208d4598
+curl -fsSL "https://github.com/OpenVPN/easy-rsa/releases/download/v$EASYRSA_VERSION/EasyRSA-$EASYRSA_VERSION.tgz" -o /tmp/easy-rsa.tgz
+echo "$EASYRSA_SHA256  /tmp/easy-rsa.tgz" | sha256sum -c -
+mkdir -p /usr/share/easy-rsa
+tar -xzf /tmp/easy-rsa.tgz -C /usr/share/easy-rsa --strip-components=1
+rm -f /tmp/easy-rsa.tgz
+
+cat > /etc/sysctl.d/99-openvpn.conf <<'SYSCTL'
+net.ipv4.ip_forward = 1
+net.ipv4.conf.all.rp_filter = 2
+net.ipv4.conf.default.rp_filter = 2
+SYSCTL
+sysctl --system
+
+getent group openvpn >/dev/null 2>&1 || groupadd --system openvpn
+id -u openvpn >/dev/null 2>&1 || useradd --system --gid openvpn --home-dir /var/lib/openvpn --shell /sbin/nologin openvpn
+
+mkdir -p /etc/openvpn/server /etc/openvpn/easy-rsa /root/clients
+
+EASYRSA_SRC=/usr/share/easy-rsa
+if [ ! -x "$EASYRSA_SRC/easyrsa" ]; then
+  EASYRSA_SRC=$(dirname "$(find /usr/share/easy-rsa -name easyrsa -type f | sort | tail -n 1)")
+fi
+cp -a "$EASYRSA_SRC/." /etc/openvpn/easy-rsa/
+
+cd /etc/openvpn/easy-rsa
+export EASYRSA_BATCH=1
+
+./easyrsa init-pki
+./easyrsa build-ca nopass
+./easyrsa build-server-full server nopass
+./easyrsa gen-dh
+./easyrsa gen-crl
+
+openvpn --genkey secret /etc/openvpn/server/ta.key
+
+cp pki/ca.crt pki/issued/server.crt pki/private/server.key pki/dh.pem pki/crl.pem /etc/openvpn/server/
+chown -R openvpn:openvpn /etc/openvpn/server
+chmod 600 /etc/openvpn/server/server.key /etc/openvpn/server/ta.key /etc/openvpn/server/crl.pem
+
+cat > /etc/openvpn/server/server.conf <<EOF
+port 1194
+proto udp
+dev tun
+topology subnet
+server ${client_network} ${client_netmask}
+push "route 10.20.0.0/16 255.255.0.0"
+push "dhcp-option DNS 10.20.0.2"
+max-clients 32
+keepalive 10 60
+persist-key
+persist-tun
+user openvpn
+group openvpn
+ca /etc/openvpn/server/ca.crt
+cert /etc/openvpn/server/server.crt
+key /etc/openvpn/server/server.key
+dh /etc/openvpn/server/dh.pem
+tls-crypt /etc/openvpn/server/ta.key
+crl-verify /etc/openvpn/server/crl.pem
+remote-cert-tls client
+data-ciphers AES-256-GCM:AES-128-GCM
+auth SHA256
+explicit-exit-notify 1
+verb 3
+EOF
+
+cat > /usr/local/sbin/make-ovpn <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+NAME="$1"
+cd /etc/openvpn/easy-rsa
+if [ ! -f "/etc/openvpn/easy-rsa/pki/issued/$NAME.crt" ]; then
+  EASYRSA_BATCH=1 ./easyrsa --batch build-client-full "$NAME" nopass
+fi
+cat > "/root/clients/$NAME.ovpn" <<EOF
+client
+dev tun
+proto udp
+remote __VPN_PUBLIC_IP__ 1194
+resolv-retry infinite
+nobind
+persist-key
+persist-tun
+remote-cert-tls server
+auth SHA256
+data-ciphers AES-256-GCM:AES-128-GCM
+auth-nocache
+verb 3
+
+<ca>
+$(cat /etc/openvpn/easy-rsa/pki/ca.crt)
+</ca>
+<cert>
+$(cat /etc/openvpn/easy-rsa/pki/issued/$NAME.crt)
+</cert>
+<key>
+$(cat /etc/openvpn/easy-rsa/pki/private/$NAME.key)
+</key>
+<tls-crypt>
+$(cat /etc/openvpn/server/ta.key)
+</tls-crypt>
+EOF
+chmod 600 "/root/clients/$NAME.ovpn"
+echo "Wrote /root/clients/$NAME.ovpn"
+SCRIPT
+sed -i "s|__VPN_PUBLIC_IP__|${vpn_public_ip}|g" /usr/local/sbin/make-ovpn
+chmod 755 /usr/local/sbin/make-ovpn
+
+cat > /usr/local/sbin/revoke-ovpn <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+NAME="$1"
+cd /etc/openvpn/easy-rsa
+EASYRSA_BATCH=1 ./easyrsa --batch revoke "$NAME"
+EASYRSA_BATCH=1 ./easyrsa gen-crl
+install -m 600 -o openvpn -g openvpn pki/crl.pem /etc/openvpn/server/crl.pem
+systemctl restart openvpn-server@server
+echo "Revoked $NAME"
+SCRIPT
+chmod 755 /usr/local/sbin/revoke-ovpn
+
+/usr/local/sbin/make-ovpn admin
+
+systemctl enable --now openvpn-server@server
+systemctl enable --now amazon-ssm-agent 2>/dev/null || true

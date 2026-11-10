@@ -84,17 +84,27 @@ resource "aws_nat_gateway" "regional" {
   }
 }
 
+# Do not use inline route blocks here. Routes are managed by aws_route
+# resources (private_nat below and vpn_clients in the root module). Mixing
+# inline routes with aws_route makes the route table authoritative and removes
+# the VPN return route on refresh.
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id
 
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.regional.id
+  lifecycle {
+    # Keep the route table from adopting or removing routes managed by aws_route.
+    ignore_changes = [route]
   }
 
   tags = {
     Name = "eks-private-routes"
   }
+}
+
+resource "aws_route" "private_nat" {
+  route_table_id         = aws_route_table.private.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.regional.id
 }
 
 resource "aws_route_table" "public" {

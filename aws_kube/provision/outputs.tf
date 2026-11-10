@@ -30,3 +30,13 @@ output "vpc_id" {
   description = "VPC ID used by the Kubernetes platform chart."
   value       = module.networking.vpc_id
 }
+
+output "vpn_public_ip" {
+  description = "Elastic IP of the OpenVPN server."
+  value       = module.vpn.public_ip
+}
+
+output "vpn_instance_id" {
+  description = "VPN EC2 instance ID for SSM Session Manager."
+  value       = module.vpn.instance_id
+}

@@ -17,3 +17,8 @@ output "public_subnet_ids" {
     aws_subnet.public_b.id,
   ]
 }
+
+output "private_route_table_id" {
+  description = "Route table used by the private subnets (VPN client return path)."
+  value       = aws_route_table.private.id
+}

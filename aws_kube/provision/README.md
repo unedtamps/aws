@@ -95,15 +95,17 @@ provision/
 |   |-- eks/                    # Cluster, node group, access, Pod Identity
 |   |-- iam/                    # IAM role dan policy
 |   |-- lb/                     # NLB, EIP, listener, dan target group
-|   `-- networking/             # VPC, subnet, route, IGW, dan NAT
+|   |-- networking/             # VPC, subnet, route, IGW, dan NAT
+|   `-- vpn/                    # OpenVPN server untuk akses EKS private
 |-- backend.tf                  # Konfigurasi S3 backend
 |-- dns.tf                      # CNAME publik menuju NLB
 |-- main.tf                     # Komposisi seluruh module
 |-- outputs.tf                  # Output lintas tahap deployment
 |-- provider.tf                 # AWS dan Cloudflare provider
-|-- security-groups.tf          # Ingress NLB ke Traefik
+|-- security-groups.tf          # Ingress NLB ke Traefik dan API dari VPN
 |-- variables.tf                # Input root module
 |-- versions.tf                 # Versi OpenTofu dan provider
+|-- vpn.tf                      # OpenVPN server dan route balik client
 `-- Makefile                    # Workflow plan, apply, dan destroy
 ```
 
@@ -189,6 +191,29 @@ menambahkan ingress TCP port `8000` ke cluster security group dari kedua CIDR
 public subnet NLB. Rule ini memungkinkan traffic NLB dan health check mencapai
 Pod Traefik.
 
+File yang sama membuat `eks_api_vpn`, security group tambahan yang hanya
+dipasang ke ENI control plane EKS. Ingress-nya hanya TCP `443` dari
+`vpn_client_cidr`, sehingga node, Pod, Oracle, dan Kafka tidak terbuka untuk
+client VPN.
+
+### VPN untuk EKS Private Endpoint
+
+`modules/vpn` membuat satu EC2 OpenVPN server di public subnet dengan Elastic
+IP. Client memakai split tunnel: hanya `10.20.0.0/16` yang lewat VPN dan DNS
+diarahkan ke resolver VPC `10.20.0.2`.
+
+Alur pemakaian:
+
+1. Apply dengan `cluster_endpoint_public_access = true` supaya akses lama tetap
+   tersedia selama VPN dibangun.
+2. Connect OpenVPN dan pastikan hostname EKS resolve ke IP private
+   (`getent hosts <eks-endpoint>`).
+3. Set `cluster_endpoint_public_access = false`, lalu apply ulang.
+4. Verifikasi `kubectl get nodes` melalui VPN dan gagal tanpa VPN.
+
+Kode dan konfigurasi VPN sudah ada di repository, tetapi **belum di-apply**.
+Detail client certificate dan revoke ada di `modules/vpn/README.md`.
+
 ## Prasyarat
 
 - OpenTofu `>= 1.8.0`.
@@ -212,7 +237,9 @@ Buat `terraform.tfvars` lokal yang tidak di-commit:
 ```hcl
 cluster_name                         = "lab-eks"
 cluster_version                      = "1.36"
+cluster_endpoint_public_access       = true # false setelah VPN terverifikasi
 cluster_endpoint_public_access_cidrs = ["203.0.113.10/32"]
+vpn_admin_cidrs                      = ["203.0.113.10/32"]
 acm_domain_name                      = "traefik.lensboxd.site"
 cloudflare_zone_id                   = "<cloudflare-zone-id>"
 ```
