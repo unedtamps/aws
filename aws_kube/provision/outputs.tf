@@ -15,7 +15,7 @@ output "acm_certificate_arn" {
 
 output "aws_load_balancer_controller_role_arn" {
   description = "IAM role ARN used by the AWS Load Balancer Controller through EKS Pod Identity."
-  value       = module.iam.load_balancer_controller_role_arn
+  value       = module.eks.load_balancer_controller_role_arn
 }
 
 output "external_secret_name" {

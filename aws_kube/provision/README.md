@@ -73,9 +73,8 @@ Diagram menunjukkan dua jalur yang berbeda:
 ```mermaid
 flowchart LR
     root["Root Module"] --> network["modules/networking"]
-    root --> iam["modules/iam"]
     network --> eks["modules/eks"]
-    iam --> eks
+    root --> eks
     root --> acm["modules/acm"]
     network --> lb["modules/lb"]
     acm --> lb
@@ -92,8 +91,7 @@ provision/
 |   `-- main.tf                 # Membuat S3 remote-state bucket
 |-- modules/
 |   |-- acm/                    # Certificate dan DNS validation
-|   |-- eks/                    # Cluster, node group, access, Pod Identity
-|   |-- iam/                    # IAM role dan policy
+|   |-- eks/                    # Cluster, node group, access, Pod Identity, IAM
 |   |-- lb/                     # NLB, EIP, listener, dan target group
 |   |-- networking/             # VPC, subnet, route, IGW, dan NAT
 |   `-- vpn/                    # OpenVPN server untuk akses EKS private
@@ -142,12 +140,19 @@ Kubernetes untuk resource internal dan internet-facing load balancer.
 
 ### IAM dan EKS
 
+Role IAM untuk EKS dan add-on-nya berada di `modules/eks`. `modules/secret`
+memiliki role External Secrets, dan `modules/vpn` memiliki role SSM untuk EC2
+VPN. `modules/lb` sengaja tidak memiliki IAM karena NLB tidak memakai role;
+role Load Balancer Controller adalah identitas Pod, bukan resource NLB.
+
 | Identity | Digunakan oleh | Permission utama |
 |---|---|---|
 | EKS cluster role | EKS control plane | `AmazonEKSClusterPolicy` |
 | EKS node role | Managed node group | Worker, VPC CNI, dan ECR pull policies |
 | VPC CNI role | `kube-system/aws-node` | EKS Pod Identity untuk networking Pod |
 | Load Balancer Controller role | `kube-system/aws-load-balancer-controller` | EKS Pod Identity untuk registrasi target group |
+| EBS CSI role | `kube-system/ebs-csi-controller-sa` | EKS Pod Identity untuk volume EBS |
+| External Secrets role | `external-secrets/external-secrets` | Membaca secret di Secrets Manager |
 
 Konfigurasi cluster saat ini:
 
@@ -155,12 +160,12 @@ Konfigurasi cluster saat ini:
 |---|---|
 | Nama cluster | `lab-eks` |
 | Kubernetes | `1.36` |
-| API endpoint | Public dan private |
-| Public API allowlist | `cluster_endpoint_public_access_cidrs` |
+| API endpoint | Private saja (public dinonaktifkan) |
+| Public API allowlist | Tidak dipakai saat public endpoint mati |
 | Authentication mode | EKS API |
 | Node group | Managed, on-demand, AL2023 x86-64 |
-| Instance type | `t3.small` |
-| Scaling | Minimum 2, desired 2, maksimum 4 |
+| Instance type | `c7i-flex.large` |
+| Scaling | Minimum 2, desired 6, maksimum 6 |
 | Root volume | 20 GiB |
 
 Cluster creator tidak otomatis memperoleh akses administrator. EKS access
@@ -362,6 +367,9 @@ melakukan deployment baru:
 - ARN Target Group pada manifest `TargetGroupBinding`.
 - Nama NLB `lab-eks-traefik` dan Target Group `lab-eks-traefik-http`.
 - Nama IAM role `eks-cluster-role`, `eks-node-role`, dan `eks-vpc-cni-role`.
+- `vpn_ami_id` adalah AMI AL2023 arm64 khusus `ap-southeast-1`. Ganti nilainya
+  saat pindah region atau saat ingin upgrade AMI; perubahan ini akan
+  mengganti instance VPN dan membuat ulang certificate client.
 
 Resource EKS, NAT Gateway, NLB, EC2 worker node, dan Elastic IP menimbulkan biaya
 selama aktif.

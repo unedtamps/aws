@@ -124,7 +124,7 @@ resource "aws_eip" "vpn" {
 }
 
 resource "aws_instance" "vpn" {
-  ami                         = data.aws_ami.al2023.id
+  ami                         = var.ami_id != null ? var.ami_id : data.aws_ami.al2023.id
   instance_type               = var.instance_type
   subnet_id                   = var.subnet_id
   vpc_security_group_ids      = [aws_security_group.vpn.id]

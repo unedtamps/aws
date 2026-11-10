@@ -53,3 +53,14 @@ variable "architecture" {
     error_message = "architecture must be arm64 or x86_64."
   }
 }
+
+variable "ami_id" {
+  type        = string
+  description = "Pinned AMI ID for the VPN instance. When null, the latest AL2023 AMI for the selected architecture is used."
+  default     = null
+
+  validation {
+    condition     = var.ami_id == null || can(regex("^ami-[0-9a-f]+$", var.ami_id))
+    error_message = "ami_id must be null or a valid AMI ID."
+  }
+}

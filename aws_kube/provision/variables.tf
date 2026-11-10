@@ -66,6 +66,17 @@ variable "vpn_instance_type" {
   default     = "t4g.micro"
 }
 
+variable "vpn_ami_id" {
+  type        = string
+  description = "Pinned AL2023 AMI for the VPN instance. Changing this replaces the instance and regenerates client certificates."
+  default     = "ami-023f84fd3f1adceea"
+
+  validation {
+    condition     = can(regex("^ami-[0-9a-f]+$", var.vpn_ami_id))
+    error_message = "vpn_ami_id must be a valid AMI ID."
+  }
+}
+
 variable "vpn_architecture" {
   type        = string
   description = "AMI architecture for the VPN instance. arm64 for t4g, x86_64 otherwise."

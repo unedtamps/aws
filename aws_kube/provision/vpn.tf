@@ -8,6 +8,7 @@ module "vpn" {
   admin_cidrs   = var.vpn_admin_cidrs
   instance_type = var.vpn_instance_type
   architecture  = var.vpn_architecture
+  ami_id        = var.vpn_ami_id
 }
 
 # Return path for VPN client traffic: replies from the EKS control plane ENIs

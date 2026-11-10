@@ -11,7 +11,7 @@ resource "aws_eks_pod_identity_association" "vpc_cni" {
   cluster_name    = aws_eks_cluster.main.name
   namespace       = "kube-system"
   service_account = "aws-node"
-  role_arn        = var.vpc_cni_role_arn
+  role_arn        = aws_iam_role.eks_vpc_cni.arn
 
   depends_on = [
     aws_eks_addon.pod_identity_agent,
@@ -22,7 +22,7 @@ resource "aws_eks_pod_identity_association" "aws_load_balancer_controller" {
   cluster_name    = aws_eks_cluster.main.name
   namespace       = "kube-system"
   service_account = "aws-load-balancer-controller"
-  role_arn        = var.load_balancer_controller_role_arn
+  role_arn        = aws_iam_role.aws_load_balancer_controller.arn
 
   depends_on = [
     aws_eks_addon.pod_identity_agent,
@@ -44,7 +44,7 @@ resource "aws_eks_pod_identity_association" "ebs-csi" {
   cluster_name    = aws_eks_cluster.main.name
   namespace       = "kube-system"
   service_account = "ebs-csi-controller-sa"
-  role_arn        = var.eks_ebs_csi_controller_role_arn
+  role_arn        = aws_iam_role.eks_ebs_csi_controller.arn
 
   depends_on = [aws_eks_addon.pod_identity_agent]
 
