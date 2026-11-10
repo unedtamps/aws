@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db-attendence
+spec:
+  template:
+    spec:
+      containers:
+        - name: oracle
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              # An unclean container exit can leave SysV IPC resources and
+              # /dev/shm files behind. sysresv only removes resources when no
+              # instance with this SID is running, so this is safe at startup.
+              sysresv -f -l "$ORACLE_SID" >/dev/null 2>&1 || true
+              rm -rf /dev/shm/* 2>/dev/null || true
+              exec /opt/oracle/container-entrypoint.sh
+          volumeMounts:
+            - name: diag
+              mountPath: /opt/oracle/diag
+          livenessProbe:
+            exec:
+              command: ["healthcheck.sh"]
+            initialDelaySeconds: 300
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 10
+      volumes:
+        - name: diag
+          emptyDir:
+            sizeLimit: 1Gi

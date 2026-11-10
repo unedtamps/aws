@@ -3,6 +3,8 @@ kind: Kustomization
 resources:
 - ../../base
 namespace: ontime-dev
+patches:
+- path: oracle-attendence-patch.yaml
 images:
 - name: unedotamps/ontime-api-gateway
   newName: unedotamps/ontime-api-gateway
