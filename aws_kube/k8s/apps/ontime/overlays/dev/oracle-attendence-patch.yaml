@@ -5,19 +5,40 @@ metadata:
 spec:
   template:
     spec:
+      initContainers:
+        - name: ipc-tools
+          image: busybox:1.36
+          command:
+            - sh
+            - -ec
+            - cp /bin/busybox /tools/busybox && chmod 0755 /tools/busybox
+          volumeMounts:
+            - name: ipctools
+              mountPath: /tools
       containers:
         - name: oracle
           command:
             - /bin/bash
             - -ec
             - |
-              # An unclean container exit can leave SysV IPC resources and
-              # /dev/shm files behind. sysresv only removes resources when no
-              # instance with this SID is running, so this is safe at startup.
-              sysresv -f -l "$ORACLE_SID" >/dev/null 2>&1 || true
+              IPC=/opt/ipctools/busybox
+              if [ -x "$IPC" ]; then
+                OUID=$("$IPC" id -u)
+                for id in $("$IPC" awk -v uid="$OUID" 'NR>1 && $8 == uid {print $2}' /proc/sysvipc/shm 2>/dev/null); do
+                  "$IPC" ipcrm -m "$id" 2>/dev/null || true
+                done
+                for id in $("$IPC" awk -v uid="$OUID" 'NR>1 && $5 == uid {print $2}' /proc/sysvipc/sem 2>/dev/null); do
+                  "$IPC" ipcrm -s "$id" 2>/dev/null || true
+                done
+                for id in $("$IPC" awk -v uid="$OUID" 'NR>1 && $8 == uid {print $2}' /proc/sysvipc/msg 2>/dev/null); do
+                  "$IPC" ipcrm -q "$id" 2>/dev/null || true
+                done
+              fi
               rm -rf /dev/shm/* 2>/dev/null || true
               exec /opt/oracle/container-entrypoint.sh
           volumeMounts:
+            - name: ipctools
+              mountPath: /opt/ipctools
             - name: diag
               mountPath: /opt/oracle/diag
           livenessProbe:
@@ -28,6 +49,8 @@ spec:
             timeoutSeconds: 10
             failureThreshold: 10
       volumes:
+        - name: ipctools
+          emptyDir: {}
         - name: diag
           emptyDir:
             sizeLimit: 1Gi
