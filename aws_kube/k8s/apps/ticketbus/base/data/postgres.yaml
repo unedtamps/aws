@@ -1,0 +1,305 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: auth-db
+  labels:
+    app.kubernetes.io/name: auth-db
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: auth-db-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: auth-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: auth-db
+        app.kubernetes.io/component: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_name
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)"]
+            initialDelaySeconds: 45
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: gp3
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-db
+  labels:
+    app.kubernetes.io/name: auth-db
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: auth-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-db-headless
+  labels:
+    app.kubernetes.io/name: auth-db
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: auth-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ticketing-db
+  labels:
+    app.kubernetes.io/name: ticketing-db
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: ticketing-db-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ticketing-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ticketing-db
+        app.kubernetes.io/component: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_name
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)"]
+            initialDelaySeconds: 45
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: gp3
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ticketing-db
+  labels:
+    app.kubernetes.io/name: ticketing-db
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ticketing-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ticketing-db-headless
+  labels:
+    app.kubernetes.io/name: ticketing-db
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: ticketing-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: payment-db
+  labels:
+    app.kubernetes.io/name: payment-db
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: payment-db-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: payment-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: payment-db
+        app.kubernetes.io/component: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_name
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)"]
+            initialDelaySeconds: 45
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: gp3
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-db
+  labels:
+    app.kubernetes.io/name: payment-db
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: payment-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-db-headless
+  labels:
+    app.kubernetes.io/name: payment-db
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: payment-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

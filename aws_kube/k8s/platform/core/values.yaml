@@ -5,6 +5,8 @@ platform:
     - external-secrets
     # Created early so Strimzi can bind its namespaced RoleBinding here.
     - ontime-dev
+    - ticketbus-dev
+    - ticketbus-prod
 aws-ebs-csi-driver:
   controller:
     k8sTagClusterId: lab-eks
@@ -40,10 +42,12 @@ argo-cd:
   namespaceOverride: argocd
   fullnameOverride: argocd
 strimzi-kafka-operator:
-  # Watch only the app namespace to keep the operator's RoleBinding scoped.
+  # Watch only the app namespaces to keep the operator's RoleBindings scoped.
   watchNamespaces:
     - ontime-dev
     - ontime-prod
+    - ticketbus-dev
+    - ticketbus-prod
   watchAnyNamespace: false
   resources:
     requests:
@@ -91,6 +95,8 @@ traefik:
         - prod
         - ontime-dev
         - ontime-prod
+        - ticketbus-dev
+        - ticketbus-prod
     kubernetesIngress:
       enabled: false
   service:
