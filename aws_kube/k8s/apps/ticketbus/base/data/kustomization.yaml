@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - kafka.yaml
   - postgres.yaml
-  - ticketbus-secret.yaml
+  - ticketbus-external-secret.yaml
