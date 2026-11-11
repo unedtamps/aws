@@ -1,17 +1,20 @@
 # Kubernetes Platform and Applications
 
-This folder contains the Kubernetes layer for the AWS EKS lab. The cluster is
-managed by Argo CD; the shared platform is installed with Helm; and the
-application workloads are delivered from Kustomize overlays in this repository.
+This folder contains the Kubernetes layer for the AWS EKS lab. `goapi-dev` and
+`ontime-dev` are managed by Argo CD; the shared platform is installed with Helm;
+and every application workload is delivered from Kustomize overlays in this
+repository. `ticketbus-dev` is currently applied manually with `kubectl`.
 
-The documentation is split into three areas:
+The documentation is split into four areas:
 
 1. **Platform** — Argo CD, Traefik, AWS Load Balancer Controller, External
    Secrets, EBS CSI, Strimzi, monitoring, and Headlamp.
 2. **goapi apps** — the `goapi-dev` application and its PostgreSQL database.
 3. **ontime apps** — the `ontime-dev` services, Kafka, Oracle, and test tools.
+4. **ticketbus apps** — the `ticketbus-dev` API, web, Kafka, PostgreSQL, and
+   Traefik routing.
 
-The editable tldraw canvas with all three architecture diagrams is here:
+The editable tldraw canvas with all four architecture areas is here:
 
 [Open the editable tldraw canvas](docs/k8s-architecture.tldraw)
 
@@ -30,7 +33,7 @@ The platform is split across four Helm releases:
 | Release | Namespace | Chart | Purpose |
 |---|---|---|---|
 | `platform` | `kube-system` | `platform/core` | Shared cluster services: Argo CD, Traefik, AWS Load Balancer Controller, External Secrets, EBS CSI, and Strimzi. |
-| `platform-apps` | `argocd` | `platform/apps` | Argo CD `Application` objects for `goapi-dev` and `ontime-dev`, plus the Traefik `TargetGroupBinding`. |
+| `platform-apps` | `argocd` | `platform/apps` | Argo CD `Application` objects for `goapi-dev` and `ontime-dev`, plus the Traefik `TargetGroupBinding`. `ticketbus-dev` is applied manually for now. |
 | `monitoring` | `monitoring` | `platform/monitoring` | `kube-prometheus-stack`: Prometheus, Grafana, Alertmanager, node-exporter, and kube-state-metrics. |
 | `headlamp` | `headlamp` | `platform/headlamp` | Cluster UI for browsing workloads and resources. |
 
@@ -38,19 +41,19 @@ The platform is split across four Helm releases:
 
 | Component | Namespace | Simple explanation |
 |---|---|---|
-| **Argo CD** | `argocd` | GitOps controller. It watches the GitHub `HEAD` revision and keeps `goapi-dev` and `ontime-dev` in sync with the overlays in this repository. Auto-sync, self-heal, and prune are enabled. |
+| **Argo CD** | `argocd` | GitOps controller. It watches the GitHub `HEAD` revision and keeps `goapi-dev` and `ontime-dev` in sync with the overlays in this repository. Auto-sync, self-heal, and prune are enabled. `ticketbus-dev` is applied manually for now. |
 | **Traefik** | `traefik` | Ingress controller with 5 replicas. The Service is `ClusterIP:80`; the NLB forwards TLS :443 to it. It routes by `Host` using `IngressRoute` resources. |
 | **AWS Load Balancer Controller** | `kube-system` | Registers Traefik Pod IPs into the NLB target group through the `TargetGroupBinding` in `platform-apps`. It does not create a second load balancer. |
-| **External Secrets** | `external-secrets` | Reads `lab-eks/external-secrets/app-2` from AWS Secrets Manager and creates Kubernetes Secrets for the applications. Uses a `SecretStore` backed by EKS Pod Identity. |
-| **EBS CSI driver** | `kube-system` | Provides the `gp3` StorageClass used by Kafka, Oracle, PostgreSQL, Prometheus, and attendance uploads. The class uses `WaitForFirstConsumer` and allows volume expansion. |
-| **Strimzi** | `kube-system` (operator) | Kafka operator. It watches `ontime-dev` and `ontime-prod` and reconciles the `Kafka`/`KafkaNodePool` resources in the `ontime` stack. |
+| **External Secrets** | `external-secrets` | Reads `lab-eks/external-secrets/app-2` from AWS Secrets Manager and creates Kubernetes Secrets for the applications, including ticketbus `ticketbus` (DB credentials) and `ticketbus-app` (JWT, internal keys, payment tokens, S3 keys). Uses a `SecretStore` backed by EKS Pod Identity. |
+| **EBS CSI driver** | `kube-system` | Provides the `gp3` StorageClass used by Kafka, Oracle, PostgreSQL, Prometheus, attendance uploads, and the ticketbus databases and Kafka brokers. The class uses `WaitForFirstConsumer` and allows volume expansion. |
+| **Strimzi** | `kube-system` (operator) | Kafka operator. It watches `ontime-dev`, `ontime-prod`, `ticketbus-dev`, and `ticketbus-prod` and reconciles the `Kafka`/`KafkaNodePool` resources in both stacks. |
 | **kube-prometheus-stack** | `monitoring` | Prometheus (24h retention, 20Gi PVC), Grafana, Alertmanager, node-exporter, and kube-state-metrics. Alertmanager sends mail to Maildev SMTP in `ontime-dev`. |
 | **Headlamp** | `headlamp` | Web UI for the cluster. It runs with a `cluster-admin` service account and is accessed by `kubectl port-forward`, not exposed by the NLB. |
 | **TargetGroupBinding** | `traefik` | Maps the `traefik` Service to the Terraform-managed NLB target group. This is the bridge between the AWS NLB and the in-cluster Traefik pods. |
 
 The platform chart creates the base namespaces (`traefik`, `argocd`,
-`external-secrets`, and `ontime-dev`). Argo CD creates `goapi-dev` through
-`CreateNamespace=true`.
+`external-secrets`, `ontime-dev`, `ticketbus-dev`, and `ticketbus-prod`). Argo CD
+creates `goapi-dev` through `CreateNamespace=true`.
 
 ### Platform access
 
@@ -209,9 +212,138 @@ credentials are created by External Secrets.
 
 ---
 
+## ticketbus Apps
+
+**Request path**
+
+[![ticketbus request path](docs/ticketbus-request.jpg)](docs/ticketbus-request.jpg)
+
+**Event path**
+
+[![ticketbus event path](docs/ticketbus-events.jpg)](docs/ticketbus-events.jpg)
+
+Delivery: **manual** for now. There is no Argo CD Application for
+`ticketbus-dev`; deploy it with the Kustomize overlay.
+
+| Item | Value |
+|---|---|
+| Source path | `aws_kube/k8s/apps/ticketbus/overlays/dev` |
+| Namespace | `ticketbus-dev` |
+| Delivery | Manual `kubectl apply -k` (Argo CD Application not added yet) |
+| Images | Pinned to `15eaf6b` in the overlay |
+| Public host | `ticketbus.lensboxd.site` |
+| Entry point | One `IngressRoute` with CORS, rate limit, and ForwardAuth |
+
+### Components
+
+| Component | Kind | Simple explanation |
+|---|---|---|
+| `web` | Deployment | Next.js 16 on `:3000`. The Service `web` exposes port `80`. Traefik routes `/`, `/dashboard`, `/admin`, `/checkout`, and other non-API paths here. |
+| `auth-service` | Deployment | Authentication and RBAC on `:8081`. Owns `/api/auth/*` and the Traefik ForwardAuth endpoint `/api/auth/verify`. Uses `auth-db`. |
+| `ticketing-service` | Deployment | Events, bookings, and organizer payouts on `:8082`. Owns `/api/events/*`, `/api/bookings/*`, `/api/payout-account`, `/api/admin/events`, and `/api/admin/payouts`. Uses `ticketing-db`, Kafka, and S3-compatible storage for event photos. |
+| `payment-service` | Deployment | Transactions, webhooks, refunds, and payouts on `:8083`. Owns `/api/payments/*`, `/api/refunds/*`, `/api/refund-account`, and `/api/admin/refunds`. Uses `payment-db` and Kafka. `PROVIDER=mock` in this environment. |
+| `mail-service` | Deployment | Kafka consumer on `:8084`. Sends e-ticket, cancellation, and refund emails through Maildev SMTP. |
+| `ticketbus` | Kafka (Strimzi) | Three KRaft brokers with 5Gi `gp3` volumes each. New topics use 4 partitions, replication factor 3, and `min.insync.replicas=2`. |
+| `broker` | KafkaNodePool | The Strimzi node pool managed by the `ticketbus` Kafka resource: controller and broker roles, 3 replicas. |
+| `auth-db` | StatefulSet | PostgreSQL 16 with one replica and a 5Gi `gp3` PVC. |
+| `ticketing-db` | StatefulSet | PostgreSQL 16 with one replica and a 5Gi `gp3` PVC. |
+| `payment-db` | StatefulSet | PostgreSQL 16 with one replica and a 5Gi `gp3` PVC. |
+| `ticketbus` | ExternalSecret | DB credentials from `lab-eks/external-secrets/app-2`: `auth_db_*`, `ticketing_db_*`, and `payment_db_*`. |
+| `ticketbus-app` | ExternalSecret | JWT keys, admin seeds, internal API keys, webhook token, Xendit key, and S3 access keys from the same AWS secret. |
+| `ticketbus-api` | IngressRoute | Single router table for the web, auth, ticketing, and payment services. Protected routes use ForwardAuth; webhooks and public event reads do not. |
+| `kafka-ui` | Deployment | Kafka UI on `:8080`. ClusterIP only; access with `kubectl port-forward`. |
+| `maildev` | Deployment | Development SMTP on `:1025` and web inbox on `:1080`. |
+
+### Request flow
+
+```text
+Internet
+  -> NLB :443
+  -> Traefik (Host: ticketbus.lensboxd.site)
+  -> web :3000                    /, /dashboard, /admin, /checkout
+  -> /api/auth/*       -> auth-service :8081      -> auth-db :5432
+  -> /api/events/*     -> ticketing-service :8082 -> ticketing-db :5432
+  -> /api/bookings/*   -> ticketing-service :8082
+  -> /api/payments/*   -> payment-service :8083   -> payment-db :5432
+  -> /api/refunds/*    -> payment-service :8083
+```
+
+Traefik calls the auth service for ForwardAuth on protected routes:
+
+```text
+Traefik -> auth-service :8081 /api/auth/verify
+```
+
+The ticketing service calls the payment service internally over REST:
+
+```text
+ticketing-service -> payment-service :8083 POST /api/payments/internal
+```
+
+### Event flow
+
+```text
+ticketing-service -> Kafka: event.cancelled, ticket.issued, payout.requested
+payment-service   -> Kafka: payment.completed, payment.expired,
+                            payout.completed, refund.completed
+
+Kafka -> ticketing-service: payment.completed, payment.expired, payout.completed
+Kafka -> payment-service: event.cancelled, payout.requested
+Kafka -> mail-service: ticket.issued, event.cancelled, refund.completed
+
+mail-service -> Maildev SMTP :1025
+```
+
+The applications create their topics at startup. The Kafka cluster defaults
+new topics to 4 partitions with replication factor 3.
+
+### Routes that are not public
+
+These paths have no `IngressRoute`. They are reachable only inside the cluster:
+
+- `/api/payments/internal` — ticketing to payment service-to-service call.
+- `/api/payments/booking/mock` — dev-only payment webhook simulator.
+- `/api/payments/payout/mock` — dev-only payout webhook simulator.
+
+### Storage summary
+
+| Workload | PVC |
+|---|---|
+| Kafka brokers | 3 × 5Gi `gp3` |
+| `auth-db` | 5Gi `gp3` |
+| `ticketing-db` | 5Gi `gp3` |
+| `payment-db` | 5Gi `gp3` |
+
+### ticketbus access
+
+```bash
+# Web
+kubectl -n ticketbus-dev port-forward svc/web 3000:80
+
+# API health
+kubectl -n ticketbus-dev port-forward svc/auth-service 8081:8081
+kubectl -n ticketbus-dev port-forward svc/ticketing-service 8082:8082
+kubectl -n ticketbus-dev port-forward svc/payment-service 8083:8083
+
+# Kafka UI
+kubectl -n ticketbus-dev port-forward svc/kafka-ui 8080:80
+
+# Maildev web inbox
+kubectl -n ticketbus-dev port-forward svc/maildev 1080:1080
+```
+
+The public host is `https://ticketbus.lensboxd.site`. The web image is built
+with `NEXT_PUBLIC_API_URL=https://ticketbus.lensboxd.site`; rebuild it if the
+public host changes. Event photos use S3-compatible storage; replace the
+`S3_ENDPOINT`, `S3_BUCKET_NAME`, and `S3_PUBLIC_URL` placeholders in
+`base/apps/configmap.yaml` with the real bucket details.
+
+---
+
 ## GitOps Workflow
 
-`platform/apps` creates the Argo CD Applications. Both applications use:
+`platform/apps` creates the Argo CD Applications for `goapi-dev` and
+`ontime-dev`. Both applications use:
 
 - `repoURL: https://github.com/unedtamps/aws.git`
 - `targetRevision: HEAD`
@@ -233,6 +365,12 @@ git commit -m "deploy: update <app> image"
 git push
 
 # Argo CD reconciles the new revision
+```
+
+`ticketbus-dev` is outside Argo CD for now. Apply it manually:
+
+```bash
+kubectl apply -k aws_kube/k8s/apps/ticketbus/overlays/dev
 ```
 
 Database and Kafka volumes are retained with `gp3` PVCs. Deleting a pod does
