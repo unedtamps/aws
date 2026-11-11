@@ -16,3 +16,13 @@ resource "cloudflare_dns_record" "ontime" {
   ttl     = 1
   proxied = false
 }
+
+resource "cloudflare_dns_record" "ticketbus" {
+  zone_id = var.cloudflare_zone_id
+  name    = "ticketbus.lensboxd.site"
+  type    = "CNAME"
+  content = module.lb.nlb_dns_name
+
+  ttl     = 1
+  proxied = false
+}
