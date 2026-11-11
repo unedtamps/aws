@@ -33,7 +33,7 @@ data:
   S3_ENDPOINT: https://17a29c65cb02da67c151b45c46a96bfa.r2.cloudflarestorage.com
   S3_SECURE: "true"
   S3_REGION: auto
-  S3_BUCKET_NAME: ticketbus-events
+  S3_BUCKET_NAME: ticketbus
   S3_PUBLIC_URL: https://pub-f7f9a77fd077445c9ef924ab5c25afc0.r2.dev
 ---
 apiVersion: v1
@@ -50,8 +50,8 @@ data:
   CONSUMER_CONCURRENCY: "4"
   OUTBOX_CONCURRENCY: "4"
   OUTBOX_POLL_MS: "200"
-  PROVIDER: xendit
-  XENDIT_BASE_URL: https://api.xendit.co/v1
+  PROVIDER: "xendit"
+  XENDIT_BASE_URL: https://api.xendit.co
   EXPIRY_POLL_SEC: "30"
   XENDIT_PAYOUT_PATH: /v2/payouts
 ---
