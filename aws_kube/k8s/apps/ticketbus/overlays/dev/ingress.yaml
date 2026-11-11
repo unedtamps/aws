@@ -1,0 +1,199 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ticketbus-cors
+  labels:
+    app.kubernetes.io/part-of: ticketbus
+spec:
+  headers:
+    accessControlAllowOriginList:
+      - https://ticketbus.lensboxd.site
+      - http://localhost:3000
+      - http://127.0.0.1:3000
+    accessControlAllowMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - PATCH
+    accessControlAllowHeaders:
+      - Content-Type
+      - Authorization
+    accessControlAllowCredentials: true
+    accessControlMaxAge: 86400
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ticketbus-ratelimit
+  labels:
+    app.kubernetes.io/part-of: ticketbus
+spec:
+  rateLimit:
+    average: 30000
+    period: 1m
+    burst: 6000
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ticketbus-forward-auth
+  labels:
+    app.kubernetes.io/part-of: ticketbus
+spec:
+  forwardAuth:
+    address: http://auth-service.ticketbus-dev.svc.cluster.local:8081/api/auth/verify
+    authResponseHeaders:
+      - X-Authenticated-User-ID
+      - X-Authenticated-User-Role
+      - X-Authenticated-User-Email
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ticketbus-api
+  labels:
+    app.kubernetes.io/part-of: ticketbus
+spec:
+  entryPoints:
+    - api
+  routes:
+    - match: "Host(`ticketbus.lensboxd.site`) && PathPrefix(`/api/auth`)"
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: ticketbus-cors
+        - name: ticketbus-ratelimit
+      services:
+        - name: auth-service
+          port: 8081
+
+    - match: "Host(`ticketbus.lensboxd.site`) && PathPrefix(`/api/events`) && Method(`GET`) && !Path(`/api/events/mine`) && !Path(`/api/events/pending`) && !PathPrefix(`/api/events/organizers`)"
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: ticketbus-cors
+        - name: ticketbus-ratelimit
+      services:
+        - name: ticketing-service
+          port: 8082
+
+    - match: "Host(`ticketbus.lensboxd.site`) && PathRegexp(`^/api/events/[^/]+/payout$`)"
+      kind: Rule
+      priority: 30
+      middlewares:
+        - name: ticketbus-cors
+        - name: ticketbus-ratelimit
+        - name: ticketbus-forward-auth
+      services:
+        - name: ticketing-service
+          port: 8082
+
+    - match: "Host(`ticketbus.lensboxd.site`) && PathPrefix(`/api/events`)"
+      kind: Rule
+      priority: 10
+      middlewares:
+        - name: ticketbus-cors
+        - name: ticketbus-ratelimit
+        - name: ticketbus-forward-auth
+      services:
+        - name: ticketing-service
+          port: 8082
+
+    - match: "Host(`ticketbus.lensboxd.site`) && PathPrefix(`/api/payout-account`)"
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: ticketbus-cors
+        - name: ticketbus-ratelimit
+        - name: ticketbus-forward-auth
+      services:
+        - name: ticketing-service
+          port: 8082
+
+    - match: "Host(`ticketbus.lensboxd.site`) && PathPrefix(`/api/bookings`)"
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: ticketbus-cors
+        - name: ticketbus-ratelimit
+        - name: ticketbus-forward-auth
+      services:
+        - name: ticketing-service
+          port: 8082
+
+    - match: "Host(`ticketbus.lensboxd.site`) && PathPrefix(`/api/admin/events`)"
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: ticketbus-cors
+        - name: ticketbus-ratelimit
+        - name: ticketbus-forward-auth
+      services:
+        - name: ticketing-service
+          port: 8082
+
+    - match: "Host(`ticketbus.lensboxd.site`) && PathPrefix(`/api/admin/payouts`)"
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: ticketbus-cors
+        - name: ticketbus-ratelimit
+        - name: ticketbus-forward-auth
+      services:
+        - name: ticketing-service
+          port: 8082
+
+    - match: "Host(`ticketbus.lensboxd.site`) && PathPrefix(`/api/payments/webhook`)"
+      kind: Rule
+      priority: 30
+      middlewares:
+        - name: ticketbus-cors
+        - name: ticketbus-ratelimit
+      services:
+        - name: payment-service
+          port: 8083
+
+    - match: "Host(`ticketbus.lensboxd.site`) && PathPrefix(`/api/payments`) && !PathPrefix(`/api/payments/internal`) && !PathPrefix(`/api/payments/booking/mock`) && !PathPrefix(`/api/payments/payout/mock`)"
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: ticketbus-cors
+        - name: ticketbus-ratelimit
+        - name: ticketbus-forward-auth
+      services:
+        - name: payment-service
+          port: 8083
+
+    - match: "Host(`ticketbus.lensboxd.site`) && PathPrefix(`/api/refund-account`)"
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: ticketbus-cors
+        - name: ticketbus-ratelimit
+        - name: ticketbus-forward-auth
+      services:
+        - name: payment-service
+          port: 8083
+
+    - match: "Host(`ticketbus.lensboxd.site`) && PathPrefix(`/api/refunds`)"
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: ticketbus-cors
+        - name: ticketbus-ratelimit
+        - name: ticketbus-forward-auth
+      services:
+        - name: payment-service
+          port: 8083
+
+    - match: "Host(`ticketbus.lensboxd.site`) && PathPrefix(`/api/admin/refunds`)"
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: ticketbus-cors
+        - name: ticketbus-ratelimit
+        - name: ticketbus-forward-auth
+      services:
+        - name: payment-service
+          port: 8083

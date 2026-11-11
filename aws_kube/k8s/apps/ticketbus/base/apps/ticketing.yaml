@@ -1,0 +1,167 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ticketing-service
+  labels:
+    app.kubernetes.io/name: ticketing-service
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: ticketbus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ticketing-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ticketing-service
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: ticketbus
+    spec:
+      initContainers:
+        - name: migrate
+          image: ghcr.io/unedtamps/ticketbus/ticketbus-migrations:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              attempt=0
+              until /usr/local/bin/migrate-run.sh ticketing "$DATABASE_URL" up; do
+                attempt=$((attempt + 1))
+                if [ "$attempt" -ge 60 ]; then
+                  echo "ticketing migrations failed after 60 attempts"
+                  exit 1
+                fi
+                echo "ticketing-db not ready, retry ${attempt}/60 in 5s"
+                sleep 5
+              done
+          env:
+            - name: TICKETING_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_host
+            - name: TICKETING_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_port
+            - name: TICKETING_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_name
+            - name: TICKETING_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_user
+            - name: TICKETING_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_password
+            - name: TICKETING_DB_SSLMODE
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_sslmode
+            - name: DATABASE_URL
+              value: "postgres://$(TICKETING_DB_USER):$(TICKETING_DB_PASSWORD)@$(TICKETING_DB_HOST):$(TICKETING_DB_PORT)/$(TICKETING_DB_NAME)?sslmode=$(TICKETING_DB_SSLMODE)"
+      containers:
+        - name: ticketing-service
+          image: ghcr.io/unedtamps/ticketbus/ticketing-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: ticketing-config
+          env:
+            - name: TICKETING_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_host
+            - name: TICKETING_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_port
+            - name: TICKETING_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_name
+            - name: TICKETING_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_user
+            - name: TICKETING_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_password
+            - name: TICKETING_DB_SSLMODE
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: ticketing_db_sslmode
+            - name: DATABASE_URL
+              value: "postgres://$(TICKETING_DB_USER):$(TICKETING_DB_PASSWORD)@$(TICKETING_DB_HOST):$(TICKETING_DB_PORT)/$(TICKETING_DB_NAME)?sslmode=$(TICKETING_DB_SSLMODE)"
+            - name: INTERNAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus-app
+                  key: ticketing_internal_api_key
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus-app
+                  key: s3_access_key_id
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus-app
+                  key: s3_secret_access_key
+          startupProbe:
+            httpGet:
+              path: /api/events/health
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/events/health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/events/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ticketing-service
+  labels:
+    app.kubernetes.io/name: ticketing-service
+    app.kubernetes.io/part-of: ticketbus
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ticketing-service
+  ports:
+    - name: http
+      port: 8082
+      targetPort: http

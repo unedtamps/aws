@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maildev
+  labels:
+    app.kubernetes.io/name: maildev
+    app.kubernetes.io/part-of: ticketbus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: maildev
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: maildev
+        app.kubernetes.io/part-of: ticketbus
+    spec:
+      containers:
+        - name: maildev
+          image: maildev/maildev:2.2.1
+          ports:
+            - name: web
+              containerPort: 1080
+            - name: smtp
+              containerPort: 1025
+          env:
+            - name: MAILDEV_WEB_PORT
+              value: "1080"
+            - name: MAILDEV_SMTP_PORT
+              value: "1025"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: web
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: web
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: maildev
+  labels:
+    app.kubernetes.io/name: maildev
+    app.kubernetes.io/part-of: ticketbus
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: maildev
+  ports:
+    - name: web
+      port: 1080
+      targetPort: web
+    - name: smtp
+      port: 1025
+      targetPort: smtp

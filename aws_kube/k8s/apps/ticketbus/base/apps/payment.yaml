@@ -1,0 +1,167 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  labels:
+    app.kubernetes.io/name: payment-service
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: ticketbus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: payment-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: payment-service
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: ticketbus
+    spec:
+      initContainers:
+        - name: migrate
+          image: ghcr.io/unedtamps/ticketbus/ticketbus-migrations:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              attempt=0
+              until /usr/local/bin/migrate-run.sh payment "$DATABASE_URL" up; do
+                attempt=$((attempt + 1))
+                if [ "$attempt" -ge 60 ]; then
+                  echo "payment migrations failed after 60 attempts"
+                  exit 1
+                fi
+                echo "payment-db not ready, retry ${attempt}/60 in 5s"
+                sleep 5
+              done
+          env:
+            - name: PAYMENT_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_host
+            - name: PAYMENT_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_port
+            - name: PAYMENT_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_name
+            - name: PAYMENT_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_user
+            - name: PAYMENT_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_password
+            - name: PAYMENT_DB_SSLMODE
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_sslmode
+            - name: DATABASE_URL
+              value: "postgres://$(PAYMENT_DB_USER):$(PAYMENT_DB_PASSWORD)@$(PAYMENT_DB_HOST):$(PAYMENT_DB_PORT)/$(PAYMENT_DB_NAME)?sslmode=$(PAYMENT_DB_SSLMODE)"
+      containers:
+        - name: payment-service
+          image: ghcr.io/unedtamps/ticketbus/payment-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8083
+          envFrom:
+            - configMapRef:
+                name: payment-config
+          env:
+            - name: PAYMENT_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_host
+            - name: PAYMENT_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_port
+            - name: PAYMENT_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_name
+            - name: PAYMENT_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_user
+            - name: PAYMENT_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_password
+            - name: PAYMENT_DB_SSLMODE
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: payment_db_sslmode
+            - name: DATABASE_URL
+              value: "postgres://$(PAYMENT_DB_USER):$(PAYMENT_DB_PASSWORD)@$(PAYMENT_DB_HOST):$(PAYMENT_DB_PORT)/$(PAYMENT_DB_NAME)?sslmode=$(PAYMENT_DB_SSLMODE)"
+            - name: INTERNAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus-app
+                  key: payment_internal_api_key
+            - name: WEBHOOK_CALLBACK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus-app
+                  key: webhook_callback_token
+            - name: XENDIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus-app
+                  key: xendit_api_key
+          startupProbe:
+            httpGet:
+              path: /api/payments/health
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/payments/health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/payments/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  labels:
+    app.kubernetes.io/name: payment-service
+    app.kubernetes.io/part-of: ticketbus
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: payment-service
+  ports:
+    - name: http
+      port: 8083
+      targetPort: http

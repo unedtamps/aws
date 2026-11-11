@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-config
+  labels:
+    app.kubernetes.io/part-of: ticketbus
+data:
+  APP_ENV: development
+  PORT: "8081"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ticketing-config
+  labels:
+    app.kubernetes.io/part-of: ticketbus
+data:
+  APP_ENV: development
+  PORT: "8082"
+  KAFKA_BROKERS: ticketbus-kafka-bootstrap:9092
+  RESERVATION_TTL: "1800"
+  CONSUMER_CONCURRENCY: "4"
+  OUTBOX_CONCURRENCY: "4"
+  OUTBOX_POLL_MS: "200"
+  PAYMENT_SERVICE_URL: http://payment-service:8083
+  PAYMENT_TIMEOUT_SEC: "10"
+  REST_DISPATCH_POLL_MS: "200"
+
+  # Event photos. The access key and secret are in the ticketbus-app Secret.
+  # These three values are not secrets; replace the placeholders with the
+  # Cloudflare R2 account endpoint, bucket name, and public base URL.
+  # The S3 client is offline until the first upload, so the API still starts
+  # with placeholders; only event photo uploads will fail.
+  S3_ENDPOINT: example.invalid
+  S3_SECURE: "true"
+  S3_REGION: auto
+  S3_BUCKET_NAME: ticketbus-events
+  S3_PUBLIC_URL: https://example.invalid/ticketbus-events
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payment-config
+  labels:
+    app.kubernetes.io/part-of: ticketbus
+data:
+  APP_ENV: development
+  PORT: "8083"
+  KAFKA_BROKERS: ticketbus-kafka-bootstrap:9092
+  WEBHOOK_BASE_URL: https://ticketbus.lensboxd.site/api/payments/webhook
+  CONSUMER_CONCURRENCY: "4"
+  OUTBOX_CONCURRENCY: "4"
+  OUTBOX_POLL_MS: "200"
+  PROVIDER: mock
+  XENDIT_BASE_URL: https://api.xendit.co/v1
+  EXPIRY_POLL_SEC: "30"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mail-config
+  labels:
+    app.kubernetes.io/part-of: ticketbus
+data:
+  APP_ENV: development
+  PORT: "8084"
+  KAFKA_BROKERS: ticketbus-kafka-bootstrap:9092
+  CONSUMER_CONCURRENCY: "4"
+  SMTP_HOST: maildev
+  SMTP_PORT: "1025"
+  SMTP_FROM: "TicketBus <no-reply@ticketbus.local>"
+  WEB_BASE_URL: https://ticketbus.lensboxd.site

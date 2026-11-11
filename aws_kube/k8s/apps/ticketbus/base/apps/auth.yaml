@@ -1,4 +1,167 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ticketbus-auth
+  name: auth-service
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: ticketbus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: auth-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: auth-service
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: ticketbus
+    spec:
+      initContainers:
+        - name: migrate
+          image: ghcr.io/unedtamps/ticketbus/ticketbus-migrations:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              attempt=0
+              until /usr/local/bin/migrate-run.sh auth "$DATABASE_URL" up; do
+                attempt=$((attempt + 1))
+                if [ "$attempt" -ge 60 ]; then
+                  echo "auth migrations failed after 60 attempts"
+                  exit 1
+                fi
+                echo "auth-db not ready, retry ${attempt}/60 in 5s"
+                sleep 5
+              done
+          env:
+            - name: AUTH_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_host
+            - name: AUTH_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_port
+            - name: AUTH_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_name
+            - name: AUTH_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_user
+            - name: AUTH_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_password
+            - name: AUTH_DB_SSLMODE
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_sslmode
+            - name: DATABASE_URL
+              value: "postgres://$(AUTH_DB_USER):$(AUTH_DB_PASSWORD)@$(AUTH_DB_HOST):$(AUTH_DB_PORT)/$(AUTH_DB_NAME)?sslmode=$(AUTH_DB_SSLMODE)"
+      containers:
+        - name: auth-service
+          image: ghcr.io/unedtamps/ticketbus/auth-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: auth-config
+          env:
+            - name: AUTH_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_host
+            - name: AUTH_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_port
+            - name: AUTH_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_name
+            - name: AUTH_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_user
+            - name: AUTH_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_password
+            - name: AUTH_DB_SSLMODE
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus
+                  key: auth_db_sslmode
+            - name: DATABASE_URL
+              value: "postgres://$(AUTH_DB_USER):$(AUTH_DB_PASSWORD)@$(AUTH_DB_HOST):$(AUTH_DB_PORT)/$(AUTH_DB_NAME)?sslmode=$(AUTH_DB_SSLMODE)"
+            - name: JWT_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus-app
+                  key: jwt_private_key
+            - name: JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus-app
+                  key: jwt_public_key
+            - name: ADMIN_SEEDS
+              valueFrom:
+                secretKeyRef:
+                  name: ticketbus-app
+                  key: admin_seeds
+          startupProbe:
+            httpGet:
+              path: /api/auth/health
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/auth/health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/auth/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/part-of: ticketbus
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: auth-service
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http
