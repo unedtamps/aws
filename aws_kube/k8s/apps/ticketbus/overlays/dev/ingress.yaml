@@ -197,3 +197,13 @@ spec:
       services:
         - name: payment-service
           port: 8083
+
+    - match: "Host(`ticketbus.lensboxd.site`) && PathPrefix(`/`) && !PathPrefix(`/api`)"
+      kind: Rule
+      priority: 1
+      middlewares:
+        - name: ticketbus-cors
+        - name: ticketbus-ratelimit
+      services:
+        - name: web
+          port: 80
