@@ -24,6 +24,35 @@ The editable tldraw canvas with all four architecture areas is here:
 
 ---
 
+## Cluster workload overview
+
+Snapshot from the running cluster. Counts change as pods restart or workloads
+scale.
+
+| Namespace | Pods | Deployments | StatefulSets | DaemonSets | Services | Main workloads |
+|---|---:|---:|---:|---:|---:|---|
+| `kube-system` | 31 | 4 | — | 4 | 5 | coreDNS, AWS Load Balancer Controller, EBS CSI controller and node, VPC CNI, kube-proxy, EKS Pod Identity agent, Strimzi operator |
+| `argocd` | 7 | 6 | 1 | — | 5 | Argo CD server, repo-server, redis, dex, applicationset, notifications, application-controller |
+| `monitoring` | 11 | 3 | 2 | 1 | 8 | Prometheus, Grafana, Alertmanager, kube-state-metrics, node-exporter, operator |
+| `external-secrets` | 3 | 3 | — | — | 1 | External Secrets controller, webhook, cert-controller |
+| `traefik` | 5 | 1 | — | — | 1 | Traefik ingress controller |
+| `goapi-dev` | 4 | 1 | 1 | — | 3 | goapi-app, PostgreSQL |
+| `ontime-dev` | 13 | 8 | 2 | — | 11 | ontime-web, api-gateway, identity, attendance, notification, Kafka, Oracle, Kafka UI, Maildev |
+| `ticketbus-dev` | 13 | 7 | 3 | — | 15 | web, auth, ticketing, payment, mail, Kafka, three PostgreSQL databases, Kafka UI, Maildev |
+| `headlamp` | 1 | 1 | — | — | 1 | Headlamp |
+| `default` | — | — | — | — | 1 | `kubernetes` Service |
+
+`goapi-prod`, `ontime-prod`, and `ticketbus-prod` exist but currently have no
+workloads.
+
+Kafka broker pods are managed by StrimziPodSets, not StatefulSets, so they
+appear in the Pods column but not the StatefulSets column.
+
+IngressClass: `alb` and `traefik`. All application Services are `ClusterIP` or
+headless; the only public entry point is the NLB → Traefik.
+
+---
+
 ## Platform
 
 [![Platform architecture](docs/platform.jpg)](docs/platform.jpg)
