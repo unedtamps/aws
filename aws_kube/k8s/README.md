@@ -126,7 +126,13 @@ The public host is `https://traefik.lensboxd.site` through the NLB and Traefik.
 
 ## ontime Apps
 
-[![ontime architecture](docs/ontime.jpg)](docs/ontime.jpg)
+**Request path**
+
+[![ontime request path](docs/ontime-request.jpg)](docs/ontime-request.jpg)
+
+**Event path**
+
+[![ontime event path](docs/ontime-events.jpg)](docs/ontime-events.jpg)
 
 Argo CD Application: `ontime-dev`
 
