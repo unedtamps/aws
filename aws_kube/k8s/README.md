@@ -26,6 +26,10 @@ The editable tldraw canvas with all four architecture areas is here:
 
 ## Cluster workload overview
 
+Headlamp map view of the namespaces and their workloads:
+
+[![Cluster workload map](docs/cluster-workloads.png)](docs/cluster-workloads.png)
+
 Snapshot from the running cluster. Counts change as pods restart or workloads
 scale.
 
