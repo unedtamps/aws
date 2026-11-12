@@ -6,14 +6,14 @@ resources:
 namespace: ticketbus-dev
 images:
   - name: ghcr.io/unedtamps/ticketbus/auth-service
-    newTag: "15eaf6b"
+    newTag: "ffbcdf4"
   - name: ghcr.io/unedtamps/ticketbus/ticketing-service
-    newTag: "15eaf6b"
+    newTag: "ffbcdf4"
   - name: ghcr.io/unedtamps/ticketbus/payment-service
-    newTag: "15eaf6b"
+    newTag: "ffbcdf4"
   - name: ghcr.io/unedtamps/ticketbus/mail-service
-    newTag: "15eaf6b"
+    newTag: "ffbcdf4"
   - name: ghcr.io/unedtamps/ticketbus/ticketbus-migrations
-    newTag: "15eaf6b"
+    newTag: "ffbcdf4"
   - name: ghcr.io/unedtamps/ticketbus/web
-    newTag: "15eaf6b"
+    newTag: "ffbcdf4"
