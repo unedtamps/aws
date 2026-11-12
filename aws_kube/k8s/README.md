@@ -1,9 +1,9 @@
 # Kubernetes Platform and Applications
 
-This folder contains the Kubernetes layer for the AWS EKS lab. `goapi-dev` and
-`ontime-dev` are managed by Argo CD; the shared platform is installed with Helm;
-and every application workload is delivered from Kustomize overlays in this
-repository. `ticketbus-dev` is currently applied manually with `kubectl`.
+This folder contains the Kubernetes layer for the AWS EKS lab. `goapi-dev`,
+`ontime-dev`, and `ticketbus-dev` are managed by Argo CD; the shared platform is
+installed with Helm; and every application workload is delivered from Kustomize
+overlays in this repository.
 
 The documentation is split into four areas:
 
@@ -66,7 +66,7 @@ The platform is split across four Helm releases:
 | Release | Namespace | Chart | Purpose |
 |---|---|---|---|
 | `platform` | `kube-system` | `platform/core` | Shared cluster services: Argo CD, Traefik, AWS Load Balancer Controller, External Secrets, EBS CSI, and Strimzi. |
-| `platform-apps` | `argocd` | `platform/apps` | Argo CD `Application` objects for `goapi-dev` and `ontime-dev`, plus the Traefik `TargetGroupBinding`. `ticketbus-dev` is applied manually for now. |
+| `platform-apps` | `argocd` | `platform/apps` | Argo CD `Application` objects for `goapi-dev`, `ontime-dev`, and `ticketbus-dev`, plus the Traefik `TargetGroupBinding`. |
 | `monitoring` | `monitoring` | `platform/monitoring` | `kube-prometheus-stack`: Prometheus, Grafana, Alertmanager, node-exporter, and kube-state-metrics. |
 | `headlamp` | `headlamp` | `platform/headlamp` | Cluster UI for browsing workloads and resources. |
 
@@ -74,7 +74,7 @@ The platform is split across four Helm releases:
 
 | Component | Namespace | Simple explanation |
 |---|---|---|
-| **Argo CD** | `argocd` | GitOps controller. It watches the GitHub `HEAD` revision and keeps `goapi-dev` and `ontime-dev` in sync with the overlays in this repository. Auto-sync, self-heal, and prune are enabled. `ticketbus-dev` is applied manually for now. |
+| **Argo CD** | `argocd` | GitOps controller. It watches the GitHub `HEAD` revision and keeps `goapi-dev`, `ontime-dev`, and `ticketbus-dev` in sync with the overlays in this repository. Auto-sync, self-heal, and prune are enabled. |
 | **Traefik** | `traefik` | Ingress controller with 5 replicas. The Service is `ClusterIP:80`; the NLB forwards TLS :443 to it. It routes by `Host` using `IngressRoute` resources. |
 | **AWS Load Balancer Controller** | `kube-system` | Registers Traefik Pod IPs into the NLB target group through the `TargetGroupBinding` in `platform-apps`. It does not create a second load balancer. |
 | **External Secrets** | `external-secrets` | Reads `lab-eks/external-secrets/app-2` from AWS Secrets Manager and creates Kubernetes Secrets for the applications, including ticketbus `ticketbus` (DB credentials) and `ticketbus-app` (JWT, internal keys, payment tokens, S3 keys). Uses a `SecretStore` backed by EKS Pod Identity. |
@@ -255,14 +255,13 @@ credentials are created by External Secrets.
 
 [![ticketbus event path](docs/ticketbus-events.jpg)](docs/ticketbus-events.jpg)
 
-Delivery: **manual** for now. There is no Argo CD Application for
-`ticketbus-dev`; deploy it with the Kustomize overlay.
+Argo CD Application: `ticketbus-dev`
 
 | Item | Value |
 |---|---|
 | Source path | `aws_kube/k8s/apps/ticketbus/overlays/dev` |
 | Namespace | `ticketbus-dev` |
-| Delivery | Manual `kubectl apply -k` (Argo CD Application not added yet) |
+| Sync policy | Automated, self-heal, prune |
 | Images | Pinned to `15eaf6b` in the overlay |
 | Public host | `ticketbus.lensboxd.site` |
 | Entry point | One `IngressRoute` with CORS, rate limit, and ForwardAuth |
@@ -375,8 +374,8 @@ public host changes. Event photos use S3-compatible storage; replace the
 
 ## GitOps Workflow
 
-`platform/apps` creates the Argo CD Applications for `goapi-dev` and
-`ontime-dev`. Both applications use:
+`platform/apps` creates the Argo CD Applications for `goapi-dev`,
+`ontime-dev`, and `ticketbus-dev`. They use:
 
 - `repoURL: https://github.com/unedtamps/aws.git`
 - `targetRevision: HEAD`
@@ -398,12 +397,6 @@ git commit -m "deploy: update <app> image"
 git push
 
 # Argo CD reconciles the new revision
-```
-
-`ticketbus-dev` is outside Argo CD for now. Apply it manually:
-
-```bash
-kubectl apply -k aws_kube/k8s/apps/ticketbus/overlays/dev
 ```
 
 Database and Kafka volumes are retained with `gp3` PVCs. Deleting a pod does

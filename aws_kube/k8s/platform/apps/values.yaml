@@ -38,3 +38,19 @@ applications:
     retryBackoffFactor: 2
     retryBackoffMaxDuration: 10m
     manifestGeneratePaths: ".;../../base"
+  - name: ticketbus-dev
+    namespace: argocd
+    project: default
+    repoURL: https://github.com/unedtamps/aws.git
+    targetRevision: HEAD
+    path: aws_kube/k8s/apps/ticketbus/overlays/dev
+    destinationServer: https://kubernetes.default.svc
+    destinationNamespace: ticketbus-dev
+    selfHeal: true
+    prune: true
+    createNamespace: true
+    retryLimit: 5
+    retryBackoffDuration: 5s
+    retryBackoffFactor: 2
+    retryBackoffMaxDuration: 10m
+    manifestGeneratePaths: ".;../../base"
